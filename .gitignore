@@ -8,10 +8,10 @@ __pycache__/
 .venv/
 venv/
 env/
-
+.gitignore
 # Env files
 .env
-
+.vscode
 # IDE
 .vscode/
 
@@ -22,3 +22,4 @@ Thumbs.db
 #报告
 20225973_姚家路_开题报告.doc
 任务书_改.docx
+
