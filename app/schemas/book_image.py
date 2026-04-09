@@ -1,16 +1,18 @@
-"""绘本图片相关模型。
+"""绘本图片相关 Schema。"""
 
-建议你手写：
-- BookImageInfo
-"""
-from pydantic import BaseModel
+# TODO: 导入 datetime、BaseModel
+# 示例：from datetime import datetime
+# 示例：from pydantic import BaseModel
 
-# TODO: 定义图片 schemas
 
-class BookImageInfo(BaseModel):# 绘本图片信息模型
-    id: int# 图片 ID
-    book_id: int# 关联的书籍 ID
-    image_path: str# 图片路径
-    image_order: int# 图片顺序
-    created_at: str# 创建时间，字符串格式
-    
+class BookImageInfo:
+    """
+    TODO: 改成 BaseModel 并补字段。
+
+    建议字段：
+    - id: int
+    - book_id: int
+    - image_path: str
+    - image_order: int
+    - created_at: datetime
+    """

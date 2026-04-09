@@ -1,30 +1,54 @@
-"""用户相关请求响应模型。
+"""用户相关 Schema（请求体 + 响应体）。
 
-建议你手写：
-- UserRegisterRequest
-- UserLoginRequest
-- UserInfo
-- LoginResponseData（包含 token）
+你要在这里定义 4 个模型：
+1. UserRegisterRequest（注册请求）
+2. UserLoginRequest（登录请求）
+3. UserInfo（用户信息响应）
+4. LoginResponseData（登录返回 data）
 """
-from pydantic import BaseModel
-# TODO: 定义用户 schemas
-class UserRegisterRequest(BaseModel):# 用户注册请求模型
-    username: str# 用户名
-    password: str# 密码
-    email: str# 邮箱地址
+
+# TODO: 导入 datetime、BaseModel、Field
+# 示例：from datetime import datetime
+# 示例：from pydantic import BaseModel, Field
 
 
-class UserLoginRequest(BaseModel):# 用户登录请求模型
-    username: str# 用户名
-    password: str# 密码
+class UserRegisterRequest:
+    """
+    TODO: 改成 BaseModel 并补字段。
+
+    建议字段：
+    - username: str（可加最小长度约束）
+    - password: str（可加最小长度约束）
+    """
 
 
-class UserInfo(BaseModel):# 用户信息模型
-    id: int# 用户 ID
-    username: str# 用户名
-    created_at: str# 创建时间，字符串格式
-    
-class LoginResponseData(BaseModel):# 登录响应数据模型，包含 token
-    access_token: str# 访问令牌
-    token_type: str = "bearer"# 令牌类型，默认为 "bearer"
-    
+class UserLoginRequest:
+    """
+    TODO: 改成 BaseModel 并补字段。
+
+    建议字段：
+    - username: str
+    - password: str
+    """
+
+
+class UserInfo:
+    """
+    TODO: 改成 BaseModel 并补字段。
+
+    建议字段：
+    - id: int
+    - username: str
+    - created_at: datetime
+    """
+
+
+class LoginResponseData:
+    """
+    TODO: 改成 BaseModel 并补字段。
+
+    建议字段：
+    - access_token: str
+    - token_type: str = "bearer"
+    - user: UserInfo
+    """
