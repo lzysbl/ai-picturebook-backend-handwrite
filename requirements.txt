@@ -1,0 +1,13 @@
+# 你先安装这些依赖，后面手写代码会用到
+fastapi
+uvicorn[standard]
+sqlalchemy
+pydantic
+pydantic-settings
+python-multipart
+Pillow
+passlib[bcrypt]
+python-jose[cryptography]
+PyMySQL
+redis
+
