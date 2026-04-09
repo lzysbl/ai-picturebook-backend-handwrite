@@ -1,6 +1,6 @@
 """stories 表模型。
 
-你要手写的字段：
+你要开发的字段：
 - id
 - book_id（外键 books.id）
 - user_id（外键 users.id）
@@ -9,7 +9,7 @@
 - story_content
 - created_at
 
-你要手写的关系：
+你要开发的关系：
 - book: 多对一
 - user: 多对一
 """

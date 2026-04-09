@@ -1,13 +1,13 @@
 """book_images 表模型。
 
-你要手写的字段：
+你要开发的字段：
 - id
 - book_id（外键 books.id）
 - image_path
 - image_order
 - created_at
 
-你要手写的关系：
+你要开发的关系：
 - book: 多对一
 """
 

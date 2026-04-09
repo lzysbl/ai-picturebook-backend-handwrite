@@ -1,6 +1,6 @@
 """安全工具（密码和 JWT）。
 
-你要手写的内容：
+你要开发的内容：
 1. hash_password()
 2. verify_password()
 3. create_access_token()

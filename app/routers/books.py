@@ -1,6 +1,6 @@
 """绘本路由。
 
-你要手写的接口：
+你要开发的接口：
 - POST /api/books
 - GET /api/books
 - GET /api/books/{book_id}

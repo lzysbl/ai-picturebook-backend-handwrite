@@ -1,12 +1,12 @@
 """users 表模型。
 
-你要手写的字段：
+你要开发的字段：
 - id
 - username（唯一索引）
 - password_hash
 - created_at
 
-你要手写的关系：
+你要开发的关系：
 - books: 一对多
 - stories: 一对多
 """

@@ -1,4 +1,4 @@
-"""图片业务服务层（你手写实现）。
+"""图片业务服务层（你开发实现）。
 
 本文件建议实现 3 个函数：
 1. save_upload_file(file, upload_dir, book_id)

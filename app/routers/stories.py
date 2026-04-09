@@ -1,6 +1,6 @@
 """故事路由。
 
-你要手写的接口：
+你要开发的接口：
 - POST /api/stories/analyze
 - POST /api/stories/generate
 - POST /api/stories/evaluate（可选）

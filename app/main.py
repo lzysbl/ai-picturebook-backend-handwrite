@@ -1,6 +1,6 @@
 """FastAPI 应用入口。
 
-你要手写的内容：
+你要开发的内容：
 1. 创建 FastAPI 实例（title/description/version）。
 2. 在启动事件中调用 init_db()。
 3. 注册 routers（health/users/books/images/stories）。
@@ -12,7 +12,7 @@
 - 打开 `http://127.0.0.1:8001/docs`
 """
 
-# TODO: 按上面提示手写 import
+# TODO: 按上面提示开发 import
 import uvicorn
 from fastapi import FastAPI
 from app.db.init_db import init_db
@@ -22,7 +22,7 @@ from app.routers import health, users, books, images, stories
 
 
 
-# TODO: 按上面提示手写 app 和路由注册
+# TODO: 按上面提示开发 app 和路由注册
 
 #在应用启动时初始化数据库
 @app.on_event("startup")

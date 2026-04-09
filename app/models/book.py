@@ -1,13 +1,13 @@
 """books 表模型。
 
-你要手写的字段：
+你要开发的字段：
 - id
 - user_id（外键 users.id）
 - title
 - cover_image
 - created_at
 
-你要手写的关系：
+你要开发的关系：
 - user: 多对一
 - images: 一对多
 - stories: 一对多

@@ -1,4 +1,4 @@
-# 你先安装这些依赖，后面手写代码会用到
+# 你先安装这些依赖，后面开发代码会用到
 fastapi
 uvicorn[standard]
 sqlalchemy

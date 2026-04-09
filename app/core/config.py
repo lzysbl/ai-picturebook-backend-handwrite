@@ -1,6 +1,6 @@
 """配置管理文件。
 
-你要手写的内容：
+你要开发的内容：
 1. 定义 Settings 类（继承 BaseSettings）。
 2. 写字段：app_name、app_env、debug、database_url、redis_url、secret_key 等。
 3. 配置 env_file='.env'。

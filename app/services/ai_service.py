@@ -1,6 +1,6 @@
 """AI 服务层（先写 mock 版）。
 
-你要手写的函数：
+你要开发的函数：
 1. analyze_images(image_paths)
    - 先用 Pillow 读宽高、模式等基础信息
 2. generate_story(analysis_result, extra_prompt=None, ...)
