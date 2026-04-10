@@ -1,16 +1,100 @@
-"""AI 服务层（先写 mock 版）。
+"""AI 服务层（Mock 版本，可替换为真实多模态模型）。"""
 
-你要开发的函数：
-1. analyze_images(image_paths)
-   - 先用 Pillow 读宽高、模式等基础信息
-2. generate_story(analysis_result, extra_prompt=None, ...)
-   - 按分析结果拼接一个可读故事
-3. evaluate_story_quality(...)
-   - 返回一致性/连贯性/适龄性分数（可选）
+from __future__ import annotations
 
-注意：
-- 路由层不要直接写模型调用，把调用统一放这里。
-"""
+from pathlib import Path
+from typing import Any
 
-# TODO: 写 AI service（mock）
+from PIL import Image, ImageStat
 
+
+def analyze_images(image_paths: list[str]) -> list[dict[str, Any]]:
+    """读取图片基础信息并返回结构化分析结果。"""
+    result: list[dict[str, Any]] = []
+    for idx, image_path in enumerate(image_paths, start=1):
+        try:
+            with Image.open(Path(image_path)) as img:
+                brightness = float(ImageStat.Stat(img.convert("L")).mean[0])
+                result.append(
+                    {
+                        "page": idx,
+                        "image_path": image_path,
+                        "width": img.width,
+                        "height": img.height,
+                        "mode": img.mode,
+                        "brightness": round(brightness, 2),
+                    }
+                )
+        except Exception as exc:  # noqa: BLE001
+            result.append({"page": idx, "image_path": image_path, "error": str(exc)})
+    return result
+
+
+def generate_story(
+    analysis_result: list[dict[str, Any]],
+    extra_prompt: str | None = None,
+    narration_style: str | None = None,
+    audience_age: str | None = None,
+    story_length: str | None = None,
+    character_name: str | None = None,
+) -> str:
+    """基于分析结果生成简单故事文本。"""
+    hero = character_name or "小主角"
+    style = narration_style or "温柔"
+    age = audience_age or "3-6"
+
+    lines: list[str] = [
+        f"{style}讲述：{hero}开始了一段绘本冒险。",
+        f"目标年龄段：{age}。",
+    ]
+
+    limit = len(analysis_result)
+    if (story_length or "medium") == "short":
+        limit = min(3, limit)
+    elif (story_length or "medium") == "medium":
+        limit = min(6, limit)
+
+    for item in analysis_result[:limit]:
+        if "error" in item:
+            lines.append(f"第{item['page']}页图片读取失败，系统已跳过。")
+            continue
+        lines.append(
+            f"第{item['page']}页尺寸为 {item['width']}x{item['height']}，"
+            f"亮度约 {item['brightness']}，故事继续推进。"
+        )
+
+    if extra_prompt:
+        lines.append(f"额外要求：{extra_prompt}。")
+
+    lines.append(f"最后，{hero}学会了勇敢和分享。")
+    return "\n".join(lines)
+
+
+def evaluate_story_quality(
+    analysis_result: list[dict[str, Any]],
+    story_content: str,
+) -> dict[str, Any]:
+    """返回可解释的简单评分。"""
+    page_count = len(analysis_result)
+    hit_count = sum(1 for i in range(1, page_count + 1) if f"第{i}页" in story_content)
+    coherence = round((hit_count / max(page_count, 1)) * 100)
+
+    avg_line_len = 0.0
+    lines = [line for line in story_content.split("\n") if line.strip()]
+    if lines:
+        avg_line_len = sum(len(line) for line in lines) / len(lines)
+    age_score = 90 if avg_line_len <= 30 else max(60, round(120 - avg_line_len))
+
+    overall = round(coherence * 0.6 + age_score * 0.4)
+    return {
+        "scores": {
+            "coherence": coherence,
+            "age_appropriateness": age_score,
+            "overall": overall,
+        },
+        "evidence": {
+            "page_count": page_count,
+            "page_hit_count": hit_count,
+            "avg_line_length": round(avg_line_len, 2),
+        },
+    }

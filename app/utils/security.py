@@ -1,15 +1,33 @@
-"""安全工具（密码和 JWT）。
+"""安全工具：密码哈希与 JWT。"""
 
-你要开发的内容：
-1. hash_password()
-2. verify_password()
-3. create_access_token()
-4. （可选）decode_access_token()
+from __future__ import annotations
 
-提示：
-- 密码哈希用 passlib[bcrypt]
-- JWT 用 python-jose
-"""
+from datetime import datetime, timedelta, timezone
+from typing import Any
 
-# TODO: 写安全工具函数
+from jose import jwt
+from passlib.context import CryptContext
 
+from app.core.config import settings
+
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+ALGORITHM = "HS256"
+
+
+def hash_password(password: str) -> str:
+    """生成密码哈希。"""
+    return pwd_context.hash(password)
+
+
+def verify_password(plain_password: str, password_hash: str) -> bool:
+    """校验明文密码与哈希。"""
+    return pwd_context.verify(plain_password, password_hash)
+
+
+def create_access_token(data: dict[str, Any], expires_minutes: int | None = None) -> str:
+    """创建 JWT 访问令牌。"""
+    to_encode = data.copy()
+    minutes = expires_minutes or settings.access_token_expire_minutes
+    expire = datetime.now(timezone.utc) + timedelta(minutes=minutes)
+    to_encode.update({"exp": expire})
+    return jwt.encode(to_encode, settings.secret_key, algorithm=ALGORITHM)

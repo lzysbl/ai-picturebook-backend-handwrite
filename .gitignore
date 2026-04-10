@@ -25,3 +25,7 @@ Thumbs.db
 # Learning scratch files
 learning/
 demo_book/
+
+报告/*
+
+scripts/build_midterm_report.py
