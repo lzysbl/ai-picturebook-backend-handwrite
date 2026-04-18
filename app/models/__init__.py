@@ -1,10 +1,8 @@
-"""模型包。
+"""集中导出所有 ORM 模型，确保建表时能注册到 metadata。"""
 
-你要开发的内容：
-1. 导入 User / Book / BookImage / Story，方便统一注册。
-"""
-
-# TODO: from .user import User
 from .book import Book
-# TODO: from .book_image import BookImage
-# TODO: from .story import Story
+from .book_image import BookImage
+from .story import Story
+from .user import User
+
+__all__ = ["User", "Book", "BookImage", "Story"]

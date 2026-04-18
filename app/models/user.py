@@ -1,30 +1,26 @@
-"""users 表模型。
+"""用户表 ORM 模型。"""
 
-你要开发的字段：
-- id
-- username（唯一索引）
-- password_hash
-- created_at
+from __future__ import annotations
 
-你要开发的关系：
-- books: 一对多
-- stories: 一对多
-"""
-from sqlalchemy import Column, Integer, String, DateTime, func
-from sqlalchemy.orm import relationship
+from datetime import datetime
+
+from sqlalchemy import DateTime, String, func
+from sqlalchemy.orm import Mapped, mapped_column, relationship
+
 from app.db.base import Base
 
-# TODO: 定义 User 模型
+
 class User(Base):
+    """用户实体：保存登录账号和密码哈希。"""
+
     __tablename__ = "users"
-    id:int = Column(Integer,primary_key=True,index= True)
-    username:str = Column(String(50),unique=True,index=True)
-    password_hash:str = Column(String(128))
-    created_at = Column(DateTime, default=func.now())#自动设置创建时间
-    # 定义与 Book 模型的一对多关系
-    books = relationship("Book", back_populates="user",cascade="all, delete-orphan")
-    # 定义与 Story 模型的一对多关系
-    stories = relationship("Story", back_populates="user",cascade="all, delete-orphan")
-    
 
+    id: Mapped[int] = mapped_column(primary_key=True, index=True)
+    username: Mapped[str] = mapped_column(String(50), unique=True, index=True)
+    password_hash: Mapped[str] = mapped_column(String(255))
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
+    # 一个用户可以拥有多本绘本
+    books: Mapped[list["Book"]] = relationship(back_populates="user", cascade="all, delete-orphan")
+    # 一个用户可以拥有多条故事记录
+    stories: Mapped[list["Story"]] = relationship(back_populates="user", cascade="all, delete-orphan")

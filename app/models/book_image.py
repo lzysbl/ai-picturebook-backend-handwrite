@@ -1,27 +1,25 @@
-"""book_images 表模型。
+"""绘本图片表 ORM 模型。"""
 
-你要开发的字段：
-- id
-- book_id（外键 books.id）
-- image_path
-- image_order
-- created_at
+from __future__ import annotations
 
-你要开发的关系：
-- book: 多对一
-"""
-
-# TODO: 定义 BookImage 模型
 from datetime import datetime
-from sqlalchemy import Column, Integer, String, DateTime, ForeignKey
-from sqlalchemy.orm import relationship
+
+from sqlalchemy import DateTime, ForeignKey, String, func
+from sqlalchemy.orm import Mapped, mapped_column, relationship
+
 from app.db.base import Base
+
+
 class BookImage(Base):
+    """绘本图片实体：保存每一页图片路径及页码顺序。"""
+
     __tablename__ = "book_images"
-    id: int = Column(Integer, primary_key=True, autoincrement=True)
-    book_id: int = Column(Integer, ForeignKey("books.id"), nullable=False)
-    image_path: str = Column(String(255), nullable=False)
-    image_order: int = Column(Integer, nullable=False)
-    created_at: datetime = Column(DateTime, default=datetime.utcnow)
-    # 定义与 Book 模型的多对一关系
-    book = relationship("Book", back_populates="images")
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    book_id: Mapped[int] = mapped_column(ForeignKey("books.id"), index=True)
+    image_path: Mapped[str] = mapped_column(String(255))
+    image_order: Mapped[int] = mapped_column(default=1)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+    # 多对一：图片归属某本绘本
+    book: Mapped["Book"] = relationship(back_populates="images")

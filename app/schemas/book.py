@@ -1,28 +1,26 @@
-"""绘本相关 Schema。"""
+"""绘本模块的请求/响应模型。"""
 
-# TODO: 导入 datetime、BaseModel、Field
-# 示例：from datetime import datetime
-# 示例：from pydantic import BaseModel, Field
+from __future__ import annotations
 
+from datetime import datetime
 
-class BookCreateRequest:
-    """
-    TODO: 改成 BaseModel 并补字段。
-
-    建议字段：
-    - title: str
-    - cover_image: str | None = None
-    """
+from pydantic import BaseModel, Field
 
 
-class BookInfo:
-    """
-    TODO: 改成 BaseModel 并补字段。
+class BookCreateRequest(BaseModel):
+    """创建绘本请求体。"""
 
-    建议字段：
-    - id: int
-    - user_id: int
-    - title: str
-    - cover_image: str | None
-    - created_at: datetime
-    """
+    title: str = Field(..., min_length=1, max_length=100, description="绘本标题")
+    cover_image: str | None = Field(default=None, description="封面图片路径")
+
+
+class BookInfo(BaseModel):
+    """绘本信息响应体。"""
+
+    id: int
+    user_id: int
+    title: str
+    cover_image: str | None
+    created_at: datetime
+
+    model_config = {"from_attributes": True}

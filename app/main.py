@@ -1,44 +1,41 @@
-"""FastAPI 应用入口。
+"""FastAPI 应用入口。"""
 
-你要开发的内容：
-1. 创建 FastAPI 实例（title/description/version）。
-2. 在启动事件中调用 init_db()。
-3. 注册 routers（health/users/books/images/stories）。
-4. 提供一个根路由 `/`，返回欢迎信息或跳转到 `/docs`。
-5. （可选）挂载前端静态目录。
+from __future__ import annotations
 
-完成后验证：
-- `python -m uvicorn app.main:app --reload --port 8001`
-- 打开 `http://127.0.0.1:8001/docs`
-"""
-
-# TODO: 按上面提示开发 import
-import uvicorn
 from fastapi import FastAPI
+
+from app.core.config import settings
 from app.db.init_db import init_db
-from app.routers import health, users, books, images, stories
-
-
-
-
-
-# TODO: 按上面提示开发 app 和路由注册
-
-#在应用启动时初始化数据库
-@app.on_event("startup")
-async def on_startup():
-    await init_db()
+from app.routers import books, health, images, stories, users
+from app.schemas.common import ApiResponse
 
 app = FastAPI(
-    title="BookStory API",
-    description="AI绘本故事生成网站的后端API",
-    version="1.0.0"
+    title=settings.app_name,
+    description="AI 绘本故事生成系统后端接口",
+    version="1.0.0",
 )
 
-# 注册路由
-# app.include_router(health.router, prefix="/health", tags=["Health"])
-# app.include_router(users.router, prefix="/users", tags=["Users"])
-# app.include_router(books.router, prefix="/books", tags=["Books"])
-# app.include_router(images.router, prefix="/images", tags=["Images"])
-# app.include_router(stories.router, prefix="/stories", tags=["Stories"])
 
+@app.on_event("startup")
+async def on_startup() -> None:
+    """应用启动时初始化数据库表。"""
+
+    await init_db()
+
+
+@app.get("/", response_model=ApiResponse)
+async def root() -> ApiResponse:
+    """根路由：返回系统欢迎信息。"""
+
+    return ApiResponse(
+        success=True,
+        message="欢迎使用 AI 绘本故事生成系统",
+        data={"docs_url": "/docs"},
+    )
+
+
+app.include_router(health.router)
+app.include_router(users.router)
+app.include_router(books.router)
+app.include_router(images.router)
+app.include_router(stories.router)
