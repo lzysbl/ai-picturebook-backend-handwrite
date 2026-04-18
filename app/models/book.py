@@ -1,34 +1,29 @@
-"""books 表模型。
+"""绘本表 ORM 模型。"""
 
-你要开发的字段：
-- id
-- user_id（外键 users.id）
-- title
-- cover_image
-- created_at
+from __future__ import annotations
 
-你要开发的关系：
-- user: 多对一
-- images: 一对多
-- stories: 一对多
-"""
 from datetime import datetime
-from sqlalchemy import Column, Integer, String, DateTime, ForeignKey
-from sqlalchemy.orm import relationship
+
+from sqlalchemy import DateTime, ForeignKey, String, func
+from sqlalchemy.orm import Mapped, mapped_column, relationship
+
 from app.db.base import Base
 
-# TODO: 定义 Book 模型
-class Book(Base):
-    __tablename__ = "books"
-    id: int = Column(Integer, primary_key=True, autoincrement=True)
-    user_id: int = Column(Integer, ForeignKey("users.id"), nullable=False)
-    title: str = Column(String(100), nullable=False)
-    cover_image: str = Column(String(255), nullable=True)
-    created_at: datetime = Column(DateTime, default=datetime.utcnow)
-    # 定义与 User 模型的多对一关系
-    user = relationship("User", back_populates="books")
-    # 定义与 BookImage 模型的一对多关系
-    images = relationship("BookImage", back_populates="book", cascade="all, delete-orphan")
-    # 定义与 Story 模型的一对多关系
-    stories = relationship("Story", back_populates="book", cascade="all, delete-orphan")
 
+class Book(Base):
+    """绘本实体：归属用户并关联多张图片与多条故事。"""
+
+    __tablename__ = "books"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    title: Mapped[str] = mapped_column(String(100))
+    cover_image: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+    # 多对一：绘本归属某个用户
+    user: Mapped["User"] = relationship(back_populates="books")
+    # 一对多：绘本包含多张图片
+    images: Mapped[list["BookImage"]] = relationship(back_populates="book", cascade="all, delete-orphan")
+    # 一对多：绘本对应多条故事记录
+    stories: Mapped[list["Story"]] = relationship(back_populates="book", cascade="all, delete-orphan")

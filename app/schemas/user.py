@@ -1,54 +1,39 @@
-"""用户相关 Schema（请求体 + 响应体）。
+"""用户模块的请求/响应模型。"""
 
-你要在这里定义 4 个模型：
-1. UserRegisterRequest（注册请求）
-2. UserLoginRequest（登录请求）
-3. UserInfo（用户信息响应）
-4. LoginResponseData（登录返回 data）
-"""
+from __future__ import annotations
 
-# TODO: 导入 datetime、BaseModel、Field
-# 示例：from datetime import datetime
-# 示例：from pydantic import BaseModel, Field
+from datetime import datetime
+
+from pydantic import BaseModel, Field
 
 
-class UserRegisterRequest:
-    """
-    TODO: 改成 BaseModel 并补字段。
+class UserRegisterRequest(BaseModel):
+    """用户注册请求体。"""
 
-    建议字段：
-    - username: str（可加最小长度约束）
-    - password: str（可加最小长度约束）
-    """
+    username: str = Field(..., min_length=3, max_length=32, description="用户名")
+    password: str = Field(..., min_length=6, max_length=64, description="密码")
 
 
-class UserLoginRequest:
-    """
-    TODO: 改成 BaseModel 并补字段。
+class UserLoginRequest(BaseModel):
+    """用户登录请求体。"""
 
-    建议字段：
-    - username: str
-    - password: str
-    """
+    username: str = Field(..., min_length=3, max_length=32, description="用户名")
+    password: str = Field(..., min_length=6, max_length=64, description="密码")
 
 
-class UserInfo:
-    """
-    TODO: 改成 BaseModel 并补字段。
+class UserInfo(BaseModel):
+    """用户基础信息（对外返回）。"""
 
-    建议字段：
-    - id: int
-    - username: str
-    - created_at: datetime
-    """
+    id: int
+    username: str
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
 
 
-class LoginResponseData:
-    """
-    TODO: 改成 BaseModel 并补字段。
+class LoginResponseData(BaseModel):
+    """登录成功后的 data 字段。"""
 
-    建议字段：
-    - access_token: str
-    - token_type: str = "bearer"
-    - user: UserInfo
-    """
+    access_token: str = Field(..., description="JWT 访问令牌")
+    token_type: str = Field(default="bearer", description="令牌类型")
+    user: UserInfo

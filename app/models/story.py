@@ -1,33 +1,29 @@
-"""stories 表模型。
+"""故事记录表 ORM 模型。"""
 
-你要开发的字段：
-- id
-- book_id（外键 books.id）
-- user_id（外键 users.id）
-- prompt
-- image_analysis
-- story_content
-- created_at
+from __future__ import annotations
 
-你要开发的关系：
-- book: 多对一
-- user: 多对一
-"""
 from datetime import datetime
-from sqlalchemy import Column, Integer, Text, DateTime, ForeignKey
-from sqlalchemy.orm import relationship
+
+from sqlalchemy import DateTime, ForeignKey, Text, func
+from sqlalchemy.orm import Mapped, mapped_column, relationship
+
 from app.db.base import Base
-# TODO: 定义 Story 模型
+
+
 class Story(Base):
+    """故事实体：保存故事文本及对应的分析结果。"""
+
     __tablename__ = "stories"
-    id: int = Column(Integer, primary_key=True, autoincrement=True)
-    book_id: int = Column(Integer, ForeignKey("books.id"), nullable=False)
-    user_id: int = Column(Integer, ForeignKey("users.id"), nullable=False)
-    prompt: str = Column(Text, nullable=False)
-    image_analysis: str = Column(Text, nullable=True)
-    story_content: str = Column(Text, nullable=False)
-    created_at: datetime = Column(DateTime, default=datetime.utcnow)
-    # 定义与 Book 模型的多对一关系
-    book = relationship("Book", back_populates="stories")
-    # 定义与 User 模型的多对一关系
-    user = relationship("User", back_populates="stories")
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    book_id: Mapped[int] = mapped_column(ForeignKey("books.id"), index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    prompt: Mapped[str | None] = mapped_column(Text, nullable=True)
+    image_analysis: Mapped[str | None] = mapped_column(Text, nullable=True)
+    story_content: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+    # 多对一：故事属于某本绘本
+    book: Mapped["Book"] = relationship(back_populates="stories")
+    # 多对一：故事由某个用户生成
+    user: Mapped["User"] = relationship(back_populates="stories")

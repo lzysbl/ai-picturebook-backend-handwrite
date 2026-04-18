@@ -1,4 +1,4 @@
-"""AI 服务层（Mock 版本，可替换为真实多模态模型）。"""
+"""AI 服务层（第一阶段 Mock 版本，后续可替换真实模型 API）。"""
 
 from __future__ import annotations
 
@@ -9,7 +9,8 @@ from PIL import Image, ImageStat
 
 
 def analyze_images(image_paths: list[str]) -> list[dict[str, Any]]:
-    """读取图片基础信息并返回结构化分析结果。"""
+    """分析图片基础信息（尺寸、模式、亮度）。"""
+
     result: list[dict[str, Any]] = []
     for idx, image_path in enumerate(image_paths, start=1):
         try:
@@ -38,7 +39,8 @@ def generate_story(
     story_length: str | None = None,
     character_name: str | None = None,
 ) -> str:
-    """基于分析结果生成简单故事文本。"""
+    """根据分析结果生成可读故事文本。"""
+
     hero = character_name or "小主角"
     style = narration_style or "温柔"
     age = audience_age or "3-6"
@@ -74,7 +76,8 @@ def evaluate_story_quality(
     analysis_result: list[dict[str, Any]],
     story_content: str,
 ) -> dict[str, Any]:
-    """返回可解释的简单评分。"""
+    """对故事做可解释的简单评分。"""
+
     page_count = len(analysis_result)
     hit_count = sum(1 for i in range(1, page_count + 1) if f"第{i}页" in story_content)
     coherence = round((hit_count / max(page_count, 1)) * 100)

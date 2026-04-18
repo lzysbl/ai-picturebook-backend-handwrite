@@ -1,4 +1,4 @@
-"""故事记录业务服务。"""
+"""故事记录业务服务层。"""
 
 from __future__ import annotations
 
@@ -19,7 +19,8 @@ async def create_story_record(
     image_analysis: dict[str, Any] | list[dict[str, Any]] | str | None,
     story_content: str,
 ) -> Story:
-    """创建故事记录。"""
+    """创建故事记录并写入数据库。"""
+
     if isinstance(image_analysis, (dict, list)):
         image_analysis_text = json.dumps(image_analysis, ensure_ascii=False)
     else:
@@ -39,14 +40,16 @@ async def create_story_record(
 
 
 async def list_stories_by_user(db: AsyncSession, user_id: int) -> list[Story]:
-    """查询用户故事历史。"""
+    """查询用户的故事历史记录。"""
+
     stmt = select(Story).where(Story.user_id == user_id).order_by(Story.created_at.desc())
     result = await db.execute(stmt)
     return list(result.scalars().all())
 
 
 async def get_story_by_id_and_user(db: AsyncSession, story_id: int, user_id: int) -> Story | None:
-    """按 id + user 查询故事详情。"""
+    """按 story_id + user_id 查询故事详情。"""
+
     stmt = select(Story).where(Story.id == story_id, Story.user_id == user_id)
     result = await db.execute(stmt)
     return result.scalar_one_or_none()

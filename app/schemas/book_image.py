@@ -1,18 +1,19 @@
-"""绘本图片相关 Schema。"""
+"""绘本图片模块响应模型。"""
 
-# TODO: 导入 datetime、BaseModel
-# 示例：from datetime import datetime
-# 示例：from pydantic import BaseModel
+from __future__ import annotations
+
+from datetime import datetime
+
+from pydantic import BaseModel
 
 
-class BookImageInfo:
-    """
-    TODO: 改成 BaseModel 并补字段。
+class BookImageInfo(BaseModel):
+    """绘本图片信息。"""
 
-    建议字段：
-    - id: int
-    - book_id: int
-    - image_path: str
-    - image_order: int
-    - created_at: datetime
-    """
+    id: int
+    book_id: int
+    image_path: str
+    image_order: int
+    created_at: datetime
+
+    model_config = {"from_attributes": True}

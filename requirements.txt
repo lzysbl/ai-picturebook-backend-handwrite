@@ -2,6 +2,7 @@
 fastapi
 uvicorn[standard]
 sqlalchemy
+aiosqlite
 pydantic
 pydantic-settings
 python-multipart
