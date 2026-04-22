@@ -13,7 +13,7 @@ env/
 
 # IDE
 .vscode/
-
+books/
 # OS
 .DS_Store
 Thumbs.db

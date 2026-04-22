@@ -20,11 +20,13 @@ function markActiveNav(page) {
 
 function initTopbar(page) {
   if (!requireLogin()) return false;
+
   const user = getCurrentUser();
   const userLabel = document.getElementById("user-label");
   if (userLabel) {
     userLabel.textContent = user ? `当前用户：${user.username}` : "未登录";
   }
+
   const logoutBtn = document.getElementById("logout-btn");
   if (logoutBtn) {
     logoutBtn.addEventListener("click", () => {
@@ -32,6 +34,7 @@ function initTopbar(page) {
       window.location.href = "/ui/login";
     });
   }
+
   markActiveNav(page);
   return true;
 }
@@ -39,6 +42,17 @@ function initTopbar(page) {
 async function loadBooks() {
   const books = await apiRequest("/api/books");
   return books || [];
+}
+
+function toPublicImageUrl(path) {
+  if (!path) return "";
+  const normalized = String(path).replace(/\\/g, "/");
+  if (normalized.startsWith("/uploads/")) return normalized;
+  if (normalized.startsWith("uploads/")) return `/${normalized}`;
+  const marker = "/uploads/";
+  const idx = normalized.lastIndexOf(marker);
+  if (idx >= 0) return normalized.slice(idx);
+  return normalized;
 }
 
 function fillBookSelect(select, books) {
@@ -66,4 +80,9 @@ function bindBookSelectPersist(select) {
   select.addEventListener("change", () => {
     setSelectedBookId(select.value);
   });
+}
+
+function findBookById(books, bookId) {
+  const idText = String(bookId || "");
+  return (books || []).find((book) => String(book.id) === idText) || null;
 }

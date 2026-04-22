@@ -10,7 +10,7 @@ from app.db.session import get_db
 from app.routers.users import get_current_user
 from app.schemas.book_image import BookImageInfo
 from app.schemas.common import ApiResponse
-from app.services.book_service import get_book_by_id_and_user
+from app.services.book_service import get_book_by_id_and_user, update_book_cover_image
 from app.services.image_service import create_book_image_record, list_book_images, save_upload_file
 
 router = APIRouter(prefix="/api/books", tags=["Images"])
@@ -35,8 +35,13 @@ async def upload_images_api(
 
     order = start_order
     saved_records: list[dict] = []
+    first_saved_path: str | None = None
+
     for file in files:
         saved_path = await save_upload_file(file=file, upload_dir=settings.upload_dir, book_id=book_id)
+        if first_saved_path is None:
+            first_saved_path = saved_path
+
         record = await create_book_image_record(
             db=db,
             book_id=book_id,
@@ -45,6 +50,12 @@ async def upload_images_api(
         )
         saved_records.append(BookImageInfo.model_validate(record).model_dump())
         order += 1
+
+    # 自动封面策略：
+    # 1) 该绘本当前没有封面 -> 用本次上传的第一页
+    # 2) 本次从第 1 页开始上传 -> 覆盖为本次第一页
+    if first_saved_path and (not book.cover_image or start_order == 1):
+        await update_book_cover_image(db=db, book=book, cover_image=first_saved_path)
 
     return ApiResponse(success=True, message="上传成功", data=saved_records)
 

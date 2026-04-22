@@ -13,7 +13,7 @@
         <div class="brand-badge"></div>
         <div>
           <h1 class="brand-title">故事历史</h1>
-          <p class="brand-sub">查看已生成故事并快速回顾内容</p>
+          <p class="brand-sub">查看已生成故事并点击查看详细内容</p>
         </div>
       </div>
       <div class="link-row">
@@ -29,13 +29,24 @@
       <a data-nav="history" href="/ui/history">故事历史</a>
     </nav>
 
-    <main>
-      <section class="card panel">
+    <main class="dashboard-grid history-grid">
+      <section class="card panel history-panel">
         <div class="toolbar">
           <h2>历史列表</h2>
-          <button id="refresh-stories" class="btn btn-soft" type="button">刷新</button>
+          <div class="toolbar-actions">
+            <select id="history-book-filter" class="select toolbar-select">
+              <option value="">全部绘本</option>
+            </select>
+            <button id="refresh-stories" class="btn btn-soft" type="button">刷新</button>
+          </div>
         </div>
         <div id="stories-list" class="list"></div>
+      </section>
+
+      <section class="card panel history-panel">
+        <h2>故事详情</h2>
+        <div id="story-meta" class="note">请在左侧点击“查看详情”。</div>
+        <pre id="story-detail" class="story-output"></pre>
       </section>
     </main>
   </div>

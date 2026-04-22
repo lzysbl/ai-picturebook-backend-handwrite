@@ -36,6 +36,10 @@
           <div class="field">
             <label class="field-label" for="book-select">选择绘本</label>
             <select id="book-select" class="select" required></select>
+            <div id="book-cover-preview" class="book-select-preview hidden">
+              <img id="book-cover-preview-img" class="book-select-preview-img" alt="绘本封面" />
+              <div id="book-cover-preview-text" class="book-select-preview-text"></div>
+            </div>
           </div>
           <div class="field">
             <label class="field-label" for="prompt">额外提示词（可选）</label>
@@ -43,6 +47,17 @@
           </div>
           <button class="btn btn-primary" type="submit">生成故事</button>
         </form>
+
+        <div id="task-progress" class="progress-wrap hidden">
+          <div class="progress-meta">
+            <span id="progress-text">等待执行</span>
+            <span id="progress-percent">0%</span>
+          </div>
+          <div class="progress-track">
+            <div id="progress-bar" class="progress-bar"></div>
+          </div>
+        </div>
+
         <pre id="generated-story" class="story-output"></pre>
       </section>
     </main>

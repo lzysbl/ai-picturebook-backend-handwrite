@@ -1,3 +1,14 @@
+function toPublicImageUrl(path) {
+  if (!path) return "";
+  const normalized = String(path).replace(/\\/g, "/");
+  if (normalized.startsWith("/uploads/")) return normalized;
+  if (normalized.startsWith("uploads/")) return `/${normalized}`;
+  const marker = "/uploads/";
+  const idx = normalized.lastIndexOf(marker);
+  if (idx >= 0) return normalized.slice(idx);
+  return normalized;
+}
+
 window.addEventListener("DOMContentLoaded", async () => {
   if (!initTopbar("books")) return;
 
@@ -11,12 +22,23 @@ window.addEventListener("DOMContentLoaded", async () => {
       list.innerHTML = '<div class="item"><div class="item-sub">暂无绘本，请先创建。</div></div>';
       return;
     }
+
     books.forEach((book) => {
+      const coverUrl = toPublicImageUrl(book.cover_image);
+      const coverHtml = coverUrl
+        ? `<img class="book-cover" src="${coverUrl}" alt="${book.title}封面" loading="lazy" />`
+        : '<div class="book-cover book-cover-empty">无封面</div>';
+
       const item = document.createElement("div");
       item.className = "item";
       item.innerHTML = `
-        <div class="item-title">${book.title}</div>
-        <div class="item-sub">ID: ${book.id} | 创建时间: ${book.created_at}</div>
+        <div class="book-item-row">
+          ${coverHtml}
+          <div class="book-meta">
+            <div class="item-title">${book.title}</div>
+            <div class="item-sub">ID: ${book.id} | 创建时间: ${book.created_at}</div>
+          </div>
+        </div>
       `;
       list.appendChild(item);
     });
@@ -30,7 +52,10 @@ window.addEventListener("DOMContentLoaded", async () => {
   form.addEventListener("submit", async (event) => {
     event.preventDefault();
     const title = titleInput.value.trim();
-    if (!title) return;
+    if (!title) {
+      showToast("请输入绘本标题");
+      return;
+    }
     try {
       await apiRequest("/api/books", {
         method: "POST",

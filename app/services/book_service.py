@@ -46,3 +46,16 @@ async def delete_book(db: AsyncSession, book_id: int, user_id: int) -> Book | No
     await db.delete(book)
     await db.commit()
     return book
+
+
+async def update_book_cover_image(
+    db: AsyncSession,
+    book: Book,
+    cover_image: str,
+) -> Book:
+    """更新绘本封面图片。"""
+
+    book.cover_image = cover_image
+    await db.commit()
+    await db.refresh(book)
+    return book
