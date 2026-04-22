@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>登录 - AI 绘本故事生成系统</title>
+  <link rel="stylesheet" href="/static/styles.css" />
+</head>
+<body>
+  <div class="page-wrap">
+    <header class="topbar">
+      <div class="brand">
+        <div class="brand-badge"></div>
+        <div>
+          <h1 class="brand-title">AI 绘本故事生成系统</h1>
+          <p class="brand-sub">登录后可创建绘本、上传图片并生成故事</p>
+        </div>
+      </div>
+      <div class="link-row">
+        <a href="/docs" target="_blank">Swagger 文档</a>
+      </div>
+    </header>
+
+    <main class="auth-layout">
+      <section class="card auth-visual">
+        <div>
+          <h2 class="auth-heading">让每张绘本图片<br />都能被讲成故事</h2>
+          <p class="auth-text">
+            支持多图上传、页码排序、自动分析与故事生成。<br />
+            页面已拆分为独立的登录、注册、工作台，便于答辩演示。
+          </p>
+          <div class="chip-list">
+            <span class="chip">FastAPI + MySQL</span>
+            <span class="chip">图片分析 Mock</span>
+            <span class="chip">JWT 鉴权</span>
+          </div>
+        </div>
+      </section>
+
+      <section class="card auth-form-card">
+        <h2 class="section-title">账号登录</h2>
+        <p class="section-sub">请输入用户名和密码</p>
+
+        <form id="login-form" class="form">
+          <div class="field">
+            <label class="field-label" for="username">用户名</label>
+            <input id="username" class="input" type="text" minlength="3" maxlength="32" required />
+          </div>
+          <div class="field">
+            <label class="field-label" for="password">密码</label>
+            <input id="password" class="input" type="password" minlength="6" maxlength="64" required />
+          </div>
+          <button class="btn btn-primary" type="submit">登录并进入工作台</button>
+        </form>
+
+        <p class="auth-switch">
+          还没有账号？<a href="/ui/register">去注册</a>
+        </p>
+      </section>
+    </main>
+  </div>
+
+  <div id="toast" class="toast"></div>
+  <script src="/static/ui-common.js"></script>
+  <script src="/static/login.js"></script>
+</body>
+</html>

@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.user import User
@@ -49,7 +50,11 @@ async def create_user(db: AsyncSession, user_in: Any) -> User:
 
     user = User(username=username, password_hash=hash_password(password))
     db.add(user)
-    await db.commit()
+    try:
+        await db.commit()
+    except IntegrityError as exc:
+        await db.rollback()
+        raise ValueError("用户名已存在") from exc
     await db.refresh(user)
     return user
 

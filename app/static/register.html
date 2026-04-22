@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>注册 - AI 绘本故事生成系统</title>
+  <link rel="stylesheet" href="/static/styles.css" />
+</head>
+<body>
+  <div class="page-wrap">
+    <header class="topbar">
+      <div class="brand">
+        <div class="brand-badge"></div>
+        <div>
+          <h1 class="brand-title">AI 绘本故事生成系统</h1>
+          <p class="brand-sub">创建账号后即可使用完整绘本工作台</p>
+        </div>
+      </div>
+      <div class="link-row">
+        <a href="/ui/login">返回登录</a>
+      </div>
+    </header>
+
+    <main class="auth-layout">
+      <section class="card auth-visual">
+        <div>
+          <h2 class="auth-heading">新用户注册</h2>
+          <p class="auth-text">
+            注册后可管理个人绘本、上传页面图片并保存故事历史。<br />
+            密码长度建议 6-32 字符，避免超出 bcrypt 字节限制。
+          </p>
+          <div class="chip-list">
+            <span class="chip">用户隔离</span>
+            <span class="chip">故事历史追踪</span>
+            <span class="chip">一键生成</span>
+          </div>
+        </div>
+      </section>
+
+      <section class="card auth-form-card">
+        <h2 class="section-title">创建账号</h2>
+        <p class="section-sub">注册后可直接登录进入工作台</p>
+
+        <form id="register-form" class="form">
+          <div class="field">
+            <label class="field-label" for="username">用户名</label>
+            <input id="username" class="input" type="text" minlength="3" maxlength="32" required />
+          </div>
+          <div class="field">
+            <label class="field-label" for="password">密码</label>
+            <input id="password" class="input" type="password" minlength="6" maxlength="64" required />
+            <span id="byte-hint" class="note">当前密码字节数：0 / 72</span>
+          </div>
+          <button class="btn btn-primary" type="submit">注册账号</button>
+        </form>
+
+        <p class="auth-switch">
+          已有账号？<a href="/ui/login">去登录</a>
+        </p>
+      </section>
+    </main>
+  </div>
+
+  <div id="toast" class="toast"></div>
+  <script src="/static/ui-common.js"></script>
+  <script src="/static/register.js"></script>
+</body>
+</html>

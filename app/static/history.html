@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>故事历史 - AI 绘本故事生成系统</title>
+  <link rel="stylesheet" href="/static/styles.css" />
+</head>
+<body>
+  <div class="page-wrap">
+    <header class="topbar">
+      <div class="brand">
+        <div class="brand-badge"></div>
+        <div>
+          <h1 class="brand-title">故事历史</h1>
+          <p class="brand-sub">查看已生成故事并快速回顾内容</p>
+        </div>
+      </div>
+      <div class="link-row">
+        <span id="user-label" class="note">未登录</span>
+        <button id="logout-btn" class="btn btn-soft" type="button">退出登录</button>
+      </div>
+    </header>
+
+    <nav class="workspace-nav card">
+      <a data-nav="books" href="/ui/books">绘本管理</a>
+      <a data-nav="upload" href="/ui/upload">图片上传</a>
+      <a data-nav="generate" href="/ui/generate">故事生成</a>
+      <a data-nav="history" href="/ui/history">故事历史</a>
+    </nav>
+
+    <main>
+      <section class="card panel">
+        <div class="toolbar">
+          <h2>历史列表</h2>
+          <button id="refresh-stories" class="btn btn-soft" type="button">刷新</button>
+        </div>
+        <div id="stories-list" class="list"></div>
+      </section>
+    </main>
+  </div>
+
+  <div id="toast" class="toast"></div>
+  <script src="/static/ui-common.js"></script>
+  <script src="/static/workspace-common.js"></script>
+  <script src="/static/history.js"></script>
+</body>
+</html>

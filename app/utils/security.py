@@ -16,13 +16,21 @@ ALGORITHM = "HS256"
 
 def hash_password(password: str) -> str:
     """将明文密码哈希存储。"""
-
-    return pwd_context.hash(password)
+    if len(password.encode("utf-8")) > 72:
+        raise ValueError("密码过长：最多 72 字节（英文约 72 个字符，中文约 24 个字符）")
+    try:
+        return pwd_context.hash(password)
+    except Exception as exc:  # noqa: BLE001
+        # 兜底处理 bcrypt 的长度异常，避免前端看到英文底层错误
+        if "72 bytes" in str(exc):
+            raise ValueError("密码过长：最多 72 字节（英文约 72 个字符，中文约 24 个字符）") from exc
+        raise
 
 
 def verify_password(plain_password: str, password_hash: str) -> bool:
     """校验明文密码与哈希值是否匹配。"""
-
+    if len(plain_password.encode("utf-8")) > 72:
+        return False
     return pwd_context.verify(plain_password, password_hash)
 
 

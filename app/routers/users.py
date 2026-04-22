@@ -52,6 +52,14 @@ async def register(
         user = await create_user(db, payload)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:  # noqa: BLE001
+        # 统一把 bcrypt 的英文长度错误转换成中文提示
+        if "72 bytes" in str(exc):
+            raise HTTPException(
+                status_code=400,
+                detail="密码过长：最多 72 字节（英文约 72 个字符，中文约 24 个字符）",
+            ) from exc
+        raise HTTPException(status_code=500, detail="注册失败，请稍后重试") from exc
 
     return ApiResponse(
         success=True,

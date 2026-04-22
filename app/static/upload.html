@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>图片上传 - AI 绘本故事生成系统</title>
+  <link rel="stylesheet" href="/static/styles.css" />
+</head>
+<body>
+  <div class="page-wrap">
+    <header class="topbar">
+      <div class="brand">
+        <div class="brand-badge"></div>
+        <div>
+          <h1 class="brand-title">图片上传</h1>
+          <p class="brand-sub">为指定绘本上传一张或多张页面图片</p>
+        </div>
+      </div>
+      <div class="link-row">
+        <span id="user-label" class="note">未登录</span>
+        <button id="logout-btn" class="btn btn-soft" type="button">退出登录</button>
+      </div>
+    </header>
+
+    <nav class="workspace-nav card">
+      <a data-nav="books" href="/ui/books">绘本管理</a>
+      <a data-nav="upload" href="/ui/upload">图片上传</a>
+      <a data-nav="generate" href="/ui/generate">故事生成</a>
+      <a data-nav="history" href="/ui/history">故事历史</a>
+    </nav>
+
+    <main>
+      <section class="card panel">
+        <h2>上传图片</h2>
+        <form id="upload-form" class="form">
+          <div class="field">
+            <label class="field-label" for="book-select">选择绘本</label>
+            <select id="book-select" class="select" required></select>
+          </div>
+          <div class="field">
+            <label class="field-label" for="image-files">上传图片（可多选）</label>
+            <input id="image-files" class="input" type="file" accept="image/*" multiple required />
+          </div>
+          <div class="field">
+            <label class="field-label" for="start-order">起始页码</label>
+            <input id="start-order" class="input" type="number" min="1" value="1" />
+          </div>
+          <button class="btn btn-primary" type="submit">上传图片</button>
+        </form>
+      </section>
+    </main>
+  </div>
+
+  <div id="toast" class="toast"></div>
+  <script src="/static/ui-common.js"></script>
+  <script src="/static/workspace-common.js"></script>
+  <script src="/static/upload.js"></script>
+</body>
+</html>
