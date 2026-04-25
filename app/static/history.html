@@ -13,7 +13,7 @@
         <div class="brand-badge"></div>
         <div>
           <h1 class="brand-title">故事历史</h1>
-          <p class="brand-sub">查看已生成故事并点击查看详细内容</p>
+          <p class="brand-sub">查看历史故事、评分与详情</p>
         </div>
       </div>
       <div class="link-row">
@@ -44,8 +44,45 @@
       </section>
 
       <section class="card panel history-panel">
-        <h2>故事详情</h2>
-        <div id="story-meta" class="note">请在左侧点击“查看详情”。</div>
+        <h2>故事详情与评分</h2>
+        <div id="story-meta" class="note">请先在左侧点击“查看详情”。</div>
+
+        <section class="quality-panel history-quality-panel">
+          <div class="quality-toolbar">
+            <div class="quality-toolbar-left">
+              <select id="history-quality-mode" class="select toolbar-select">
+                <option value="basic">基础评分（规则）</option>
+                <option value="deep">深度评分（LLM）</option>
+              </select>
+              <select id="history-judge-samples" class="select toolbar-select" disabled>
+                <option value="1">采样 1 次</option>
+                <option value="2">采样 2 次</option>
+                <option value="3">采样 3 次</option>
+              </select>
+            </div>
+            <button id="refresh-quality" class="btn btn-soft" type="button">刷新评分</button>
+          </div>
+
+          <div class="quality-score-grid">
+            <div class="q-score-card" id="score-card-overall">
+              <div class="q-score-label">总分</div>
+              <div id="q-overall" class="q-score-value">--</div>
+            </div>
+            <div class="q-score-card" id="score-card-coherence">
+              <div class="q-score-label">连贯性</div>
+              <div id="q-coherence" class="q-score-value">--</div>
+            </div>
+            <div class="q-score-card" id="score-card-age">
+              <div class="q-score-label">年龄适配</div>
+              <div id="q-age" class="q-score-value">--</div>
+            </div>
+          </div>
+
+          <div id="quality-metrics" class="quality-metrics"></div>
+          <div id="quality-judge" class="quality-judge">LLM评估：未启用</div>
+          <div id="quality-summary" class="quality-summary">暂无评分结果。</div>
+        </section>
+
         <pre id="story-detail" class="story-output"></pre>
       </section>
     </main>

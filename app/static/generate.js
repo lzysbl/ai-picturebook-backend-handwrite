@@ -25,14 +25,79 @@ function setProgress(progressWrap, progressText, progressPercent, progressBar, p
   progressBar.style.width = `${safeProgress}%`;
 }
 
+function renderQuality(qualityPanel, qualitySummary, qualityDetail, quality) {
+  if (!qualityPanel || !qualitySummary || !qualityDetail) return;
+  if (!quality) {
+    qualityPanel.classList.add("hidden");
+    qualitySummary.textContent = "";
+    qualityDetail.textContent = "";
+    qualityDetail.classList.add("hidden");
+    return;
+  }
+
+  const autoScores = quality?.automatic?.scores || {};
+  const metrics = quality?.metrics || {};
+  const judge = quality?.judge || {};
+  const lines = [];
+
+  const coherence = autoScores.coherence ?? "-";
+  const ageFit = autoScores.age_appropriateness ?? "-";
+  const overall = autoScores.overall ?? "-";
+  const repeat = metrics.repeat_3gram_ratio ?? "-";
+  const distinct2 = metrics.distinct_2 ?? "-";
+  const hallCount = metrics.hallucination_count ?? "-";
+  const hallList = Array.isArray(metrics.hallucinated_entities) ? metrics.hallucinated_entities : [];
+
+  lines.push(`自动评分：整体 ${overall}，连贯性 ${coherence}，年龄适配 ${ageFit}`);
+  lines.push(`文本指标：3-gram重复率 ${repeat}，distinct-2 ${distinct2}，疑似幻觉角色数 ${hallCount}`);
+  if (hallList.length > 0) {
+    lines.push(`疑似不存在角色：${hallList.join("、")}`);
+  }
+
+  if (judge.enabled && judge.average_scores) {
+    const avg = judge.average_scores;
+    lines.push(
+      `深度评估(${judge.model || "-"})：` +
+      `贴合度 ${avg.grounding ?? "-"}，` +
+      `连贯性 ${avg.coherence ?? "-"}，` +
+      `可读性 ${avg.readability ?? "-"}，` +
+      `年龄适配 ${avg.age_appropriateness ?? "-"}，` +
+      `趣味性 ${avg.interestingness ?? "-"}`,
+    );
+    if (judge.token_usage) {
+      lines.push(
+        `评估开销：input ${judge.token_usage.input_tokens || 0}，` +
+        `output ${judge.token_usage.output_tokens || 0}，` +
+        `预估￥${judge.token_usage.estimated_cost_cny || 0}`,
+      );
+    }
+  } else if (judge.enabled && judge.error) {
+    lines.push(`深度评估失败：${judge.error}`);
+  } else {
+    lines.push("深度评估：未启用");
+  }
+
+  qualitySummary.textContent = lines.join(" | ");
+  qualityDetail.textContent = "";
+  qualityDetail.classList.add("hidden");
+  qualityPanel.classList.remove("hidden");
+}
+
 window.addEventListener("DOMContentLoaded", async () => {
   if (!initTopbar("generate")) return;
 
   const form = document.getElementById("generate-form");
   const bookSelect = document.getElementById("book-select");
   const promptInput = document.getElementById("prompt");
+  const audienceAgeSelect = document.getElementById("audience-age");
   const output = document.getElementById("generated-story");
   if (!form || !bookSelect || !promptInput || !output) return;
+
+  const includeJudgeCheckbox = document.getElementById("include-judge");
+  const judgeSamplesSelect = document.getElementById("judge-samples");
+  const qualityPanel = document.getElementById("quality-panel");
+  const qualitySummary = document.getElementById("quality-summary");
+  const qualityDetail = document.getElementById("quality-detail");
 
   const submitBtn = form.querySelector('button[type="submit"]');
   const progressWrap = document.getElementById("task-progress");
@@ -44,6 +109,12 @@ window.addEventListener("DOMContentLoaded", async () => {
   const coverText = document.getElementById("book-cover-preview-text");
 
   let booksCache = [];
+
+  if (includeJudgeCheckbox && judgeSamplesSelect) {
+    includeJudgeCheckbox.addEventListener("change", () => {
+      judgeSamplesSelect.disabled = !includeJudgeCheckbox.checked;
+    });
+  }
 
   function updateCoverPreview() {
     if (!coverPreview || !coverImg || !coverText) return;
@@ -117,6 +188,7 @@ window.addEventListener("DOMContentLoaded", async () => {
     try {
       const result = await waitTaskResult(taskId);
       output.textContent = result?.story_content || "未返回故事文本";
+      renderQuality(qualityPanel, qualitySummary, qualityDetail, result?.quality);
       showToast("故事生成成功");
     } catch (error) {
       showToast(error.message);
@@ -135,7 +207,12 @@ window.addEventListener("DOMContentLoaded", async () => {
     }
 
     const prompt = promptInput.value.trim();
+    const audienceAge = (audienceAgeSelect?.value || "3-6").trim();
+    const includeJudge = Boolean(includeJudgeCheckbox?.checked);
+    const judgeSamples = includeJudge ? Number(judgeSamplesSelect?.value || 1) : null;
+
     output.textContent = "";
+    renderQuality(qualityPanel, qualitySummary, qualityDetail, null);
     if (!submitBtn) return;
 
     submitBtn.disabled = true;
@@ -149,16 +226,21 @@ window.addEventListener("DOMContentLoaded", async () => {
         body: JSON.stringify({
           book_id: Number(bookId),
           prompt: prompt || null,
+          audience_age: audienceAge,
+          story_length: "long",
+          include_judge: includeJudge,
+          judge_samples: judgeSamples,
         }),
       });
 
       setActiveTaskId(submitData.task_id);
       const result = await waitTaskResult(submitData.task_id);
       output.textContent = result?.story_content || "未返回故事文本";
+      renderQuality(qualityPanel, qualitySummary, qualityDetail, result?.quality);
       setSelectedBookId(bookId);
       showToast("故事生成成功");
     } catch (error) {
-      output.textContent = "生成失败，请检查模型配置或稍后再试。";
+      output.textContent = `生成失败：${error.message || "请检查模型配置或稍后再试"}`;
       showToast(error.message);
     } finally {
       submitBtn.disabled = false;

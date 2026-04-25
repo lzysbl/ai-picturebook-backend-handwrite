@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import json
+import logging
 import re
 from pathlib import Path
 from typing import Any, Awaitable, Callable
@@ -16,6 +17,7 @@ from app.core.config import settings
 
 ProgressCallback = Callable[[int, int, str], Awaitable[None] | None]
 MAX_CONCURRENCY = 8
+logger = logging.getLogger(__name__)
 
 # 常见角色后缀，用于识别“白名单之外的角色名”
 ROLE_ENTITY_MARKERS = [
@@ -52,6 +54,7 @@ async def analyze_images(
         return []
 
     provider = (settings.ai_provider or "mock").strip().lower()
+    logger.info("ai.analyze_images provider=%s image_count=%s", provider, len(image_paths))
     if provider == "qwen":
         return await _analyze_images_qwen(image_paths, progress_callback=progress_callback)
     return _analyze_images_mock(image_paths)
@@ -91,6 +94,7 @@ async def _analyze_images_qwen(
     """Qwen 识别：最多并发 8 张，每张完成更新进度。"""
 
     if not settings.qwen_api_key:
+        logger.warning("ai.analyze_images qwen_api_key_missing fallback=mock")
         return _analyze_images_mock(image_paths)
 
     total = len(image_paths)
@@ -115,6 +119,7 @@ async def _analyze_images_qwen(
                 item.update({"page": page_no, "image_path": image_path})
                 results[page_no] = item
             except Exception as exc:  # noqa: BLE001
+                logger.warning("ai.analyze_page_failed page=%s error=%s", page_no, exc)
                 results[page_no] = {
                     "page": page_no,
                     "image_path": image_path,
@@ -142,6 +147,29 @@ async def _analyze_images_qwen(
 
 async def _call_qwen_vl_for_one_image(image_path: str, page_no: int) -> dict[str, Any]:
     client = _get_qwen_client()
+    json_schema = (
+        '{"page":1,"角色":[],"场景":"","动作":[],"情绪":"","关键物体":[],"画面文字":[],'
+        '"is_title_page":false,"detected_title":"","detected_author":""}'
+    )
+    if page_no == 1:
+        user_prompt = (
+            f"这是第{page_no}页，请优先判断是否包含绘本标题信息，并返回 JSON："
+            f"{json_schema}"
+            "规则："
+            "1) 如果识别到明确书名，写入 detected_title；"
+            "2) 如果识别到作者，写入 detected_author；"
+            "3) 如果没有明确标题，detected_title 必须返回空字符串，不要猜测；"
+            "4) 即使没有标题，也要正常提取页面内容（角色、场景、动作、情绪、关键物体、画面文字）；"
+            "5) 仅输出 JSON。"
+        )
+    else:
+        user_prompt = (
+            f"分析第{page_no}页并返回 JSON："
+            f"{json_schema}"
+            "要求：尽量提取可见文字（标题、对话、拟声词、标语等）；"
+            "并判断该页是否是标题页/扉页（如仅有书名、作者、出版社信息）。"
+        )
+
     completion = await client.chat.completions.create(
         model=settings.qwen_model,
         temperature=0.2,
@@ -154,11 +182,7 @@ async def _call_qwen_vl_for_one_image(image_path: str, page_no: int) -> dict[str
                     {"type": "image_url", "image_url": {"url": _image_path_to_data_url(image_path)}},
                     {
                         "type": "text",
-                        "text": (
-                            f"分析第{page_no}页并返回 JSON："
-                            '{"page":1,"角色":[],"场景":"","动作":[],"情绪":"","关键物体":[],"画面文字":[]}'
-                            "要求：尽量提取可见文字（标题、对话、拟声词、标语等）。"
-                        ),
+                        "text": user_prompt,
                     },
                 ],
             },
@@ -180,7 +204,14 @@ async def generate_story(
 ) -> str:
     """生成故事：优先 Qwen 润色，失败则回退模板。"""
 
+    book_title = _extract_book_title(analysis_result)
     provider = (settings.ai_provider or "mock").strip().lower()
+    logger.info(
+        "ai.generate_story provider=%s page_count=%s has_prompt=%s",
+        provider,
+        len(analysis_result),
+        bool(extra_prompt),
+    )
     if provider == "qwen" and settings.qwen_api_key:
         try:
             return await _generate_story_qwen(
@@ -190,9 +221,10 @@ async def generate_story(
                 audience_age=audience_age,
                 story_length=story_length,
                 character_name=character_name,
+                book_title=book_title,
             )
-        except Exception:  # noqa: BLE001
-            pass
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("ai.generate_story_qwen_failed fallback=template error=%s", exc)
 
     return _generate_story_template(
         analysis_result=analysis_result,
@@ -201,7 +233,343 @@ async def generate_story(
         audience_age=audience_age,
         story_length=story_length,
         character_name=character_name,
+        book_title=book_title,
     )
+
+
+# ===== Final override: enforce per-page output and no markdown markers =====
+def _sanitize_story_output_final(story_text: str) -> str:
+    """统一清洗模型输出，去掉 Markdown 标记并压缩空行。"""
+
+    text = (story_text or "").strip()
+    if not text:
+        return text
+    text = text.replace("**", "").replace("__", "")
+    text = re.sub(r"^\s*#{1,6}\s*", "", text, flags=re.MULTILINE)
+    text = re.sub(r"^\s*[-*]\s+", "", text, flags=re.MULTILINE)
+    text = re.sub(r"\n{3,}", "\n\n", text)
+    return text.strip()
+
+
+async def _generate_story_qwen_per_page(
+    analysis_result: list[dict[str, Any]],
+    extra_prompt: str | None = None,
+    narration_style: str | None = None,
+    audience_age: str | None = None,
+    story_length: str | None = None,
+    character_name: str | None = None,
+    book_title: str | None = None,
+) -> str:
+    """Qwen 版：强制每页单独输出。"""
+
+    style = (narration_style or "温柔").strip()
+    age = (audience_age or "3-6").strip()
+    hero = (character_name or "").strip()
+    pages = _sorted_pages_for_story(analysis_result, story_length)
+    allowed = _build_allowed_characters(pages, hero)
+    allowed_text = "、".join(allowed)
+    outline_text = "\n".join(_build_page_outline(pages, story_length)) or "无页面信息。"
+
+    page_numbers: list[int] = []
+    for idx, item in enumerate(pages, start=1):
+        page_no = item.get("page", idx)
+        try:
+            page_numbers.append(int(page_no))
+        except (TypeError, ValueError):
+            page_numbers.append(idx)
+    required_pages = "、".join([f"第{p}页" for p in page_numbers]) if page_numbers else "无"
+
+    prompt = (
+        "请根据页面摘要生成儿童绘本故事。\n"
+        "必须严格按以下格式输出：\n"
+        "1. 每页单独一段，段首固定为“第X页：”。\n"
+        "2. 只输出正文，不输出、前言、总结。\n"
+        "3. 禁止出现 Markdown 符号：**、##、*、-。\n"
+        f"4. 必须按顺序覆盖这些页码：{required_pages}。\n"
+        "5. 角色不得超出白名单，不能凭空新增人物或动物。\n"
+        "6. 优先融合该页 OCR 文本。\n"
+        "7. 第一行固定输出标题和作者。\n"
+        f"叙事风格：{style}；目标年龄：{age}。\n"
+        f"主角偏好：{hero or '无强制主角'}。\n"
+        f"附加要求：{extra_prompt or '无'}。\n"
+        f"绘本标题候选：{book_title or '未识别'}。\n"
+        f"角色白名单：{allowed_text}\n\n"
+        f"页面摘要：\n{outline_text}\n"
+    )
+
+    client = _get_qwen_client()
+    completion = await client.chat.completions.create(
+        model=settings.qwen_model,
+        temperature=0.4,
+        timeout=120,
+        messages=[
+            {"role": "system", "content": "你是儿童绘本叙事专家。"},
+            {"role": "user", "content": prompt},
+        ],
+    )
+    story = (completion.choices[0].message.content or "").strip()
+    if not story:
+        raise ValueError("模型未返回故事文本")
+
+    unknown_roles = _find_nonexistent_roles(story, allowed)
+    if unknown_roles:
+        story = await _rewrite_story_with_constraints(
+            story_text=story,
+            allowed_characters=allowed,
+            unknown_roles=unknown_roles,
+        )
+    return _sanitize_story_output_final(story)
+
+
+def _generate_story_template_per_page(
+    analysis_result: list[dict[str, Any]],
+    extra_prompt: str | None = None,
+    narration_style: str | None = None,
+    audience_age: str | None = None,
+    story_length: str | None = None,
+) -> str:
+    """模板兜底：每页单独一段。"""
+
+    style = (narration_style or "温柔").strip()
+    age = (audience_age or "3-6").strip()
+    pages = _sorted_pages_for_story(analysis_result, story_length)
+    lines: list[str] = []
+
+    for idx, item in enumerate(pages, start=1):
+        page_no = item.get("page", idx)
+        if "error" in item:
+            lines.append(f"第{page_no}页：这一页识别信息不完整，故事自然过渡到下一页。")
+            continue
+
+        roles = "、".join(item.get("角色", [])) if isinstance(item.get("角色"), list) else "人物"
+        actions = "、".join(item.get("动作", [])) if isinstance(item.get("动作"), list) else "活动"
+        scene = str(item.get("场景", "") or "一个场景")
+        mood = str(item.get("情绪", "") or "平静")
+        page_texts = item.get("画面文字", []) if isinstance(item.get("画面文字"), list) else []
+        ocr = "；".join([str(x).strip() for x in page_texts if str(x).strip()][:2])
+
+        text = f"第{page_no}页：在{scene}里，{roles}正在{actions}，氛围是{mood}，语气偏{style}，适合{age}岁阅读。"
+        if ocr:
+            text += f" 画面文字可见：{ocr}。"
+        lines.append(text)
+
+    if extra_prompt:
+        lines.append(f"补充要求：{extra_prompt}。")
+    return _sanitize_story_output_final("\n".join(lines))
+
+
+async def generate_story(
+    analysis_result: list[dict[str, Any]],
+    extra_prompt: str | None = None,
+    narration_style: str | None = None,
+    audience_age: str | None = None,
+    story_length: str | None = None,
+    character_name: str | None = None,
+) -> str:
+    """最终生效入口：每页单独输出，去掉 markdown 强调符号。"""
+
+    book_title = _extract_book_title(analysis_result)
+    provider = (settings.ai_provider or "mock").strip().lower()
+    logger.info(
+        "ai.generate_story.final provider=%s page_count=%s has_prompt=%s",
+        provider,
+        len(analysis_result),
+        bool(extra_prompt),
+    )
+
+    if provider == "qwen" and settings.qwen_api_key:
+        try:
+            story = await _generate_story_qwen_per_page(
+                analysis_result=analysis_result,
+                extra_prompt=extra_prompt,
+                narration_style=narration_style,
+                audience_age=audience_age,
+                story_length=story_length,
+                character_name=character_name,
+                book_title=book_title,
+            )
+            return _sanitize_story_output_final(story)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("ai.generate_story.final_qwen_failed fallback=template error=%s", exc)
+
+    story = _generate_story_template_per_page(
+        analysis_result=analysis_result,
+        extra_prompt=extra_prompt,
+        narration_style=narration_style,
+        audience_age=audience_age,
+        story_length=story_length,
+    )
+    return _sanitize_story_output_final(story)
+
+
+def _sanitize_story_output(story_text: str) -> str:
+    """统一清洗模型输出，去掉 Markdown 符号并压缩空行。"""
+
+    text = (story_text or "").strip()
+    if not text:
+        return text
+
+    text = text.replace("**", "").replace("__", "")
+    text = re.sub(r"^\s*#{1,6}\s*", "", text, flags=re.MULTILINE)
+    text = re.sub(r"^\s*[-*]\s+", "", text, flags=re.MULTILINE)
+    text = text.replace("•", "")
+    text = re.sub(r"\n{3,}", "\n\n", text)
+    return text.strip()
+
+
+async def _generate_story_qwen_v2(
+    analysis_result: list[dict[str, Any]],
+    extra_prompt: str | None = None,
+    narration_style: str | None = None,
+    audience_age: str | None = None,
+    story_length: str | None = None,
+    character_name: str | None = None,
+    book_title: str | None = None,
+) -> str:
+    """Qwen 生成：强制每页单独输出，不使用 Markdown 符号。"""
+
+    style = (narration_style or "温柔").strip()
+    age = (audience_age or "3-6").strip()
+    hero = (character_name or "").strip()
+    pages = _sorted_pages_for_story(analysis_result, story_length)
+    allowed_characters = _build_allowed_characters(pages, hero)
+    allowed_text = "、".join(allowed_characters)
+    outline_text = "\n".join(_build_page_outline(pages, story_length)) or "无页面信息。"
+
+    expected_pages: list[int] = []
+    for idx, item in enumerate(pages, start=1):
+        page_no = item.get("page", idx)
+        try:
+            expected_pages.append(int(page_no))
+        except (TypeError, ValueError):
+            expected_pages.append(idx)
+    expected_page_text = "、".join([f"第{p}页" for p in expected_pages]) if expected_pages else "无"
+
+    prompt = (
+        "请根据页面摘要生成儿童绘本故事。\n"
+        "输出格式必须严格遵守：\n"
+        "1. 每一页单独一段，每段都以“第X页：”开头。\n"
+        "2. 只输出正文，不要标题、不要说明、不要总结。\n"
+        "3. 禁止使用 Markdown 标记（例如 **、##、-、*）。\n"
+        f"4. 必须覆盖这些页码并按顺序输出：{expected_page_text}。\n"
+        "5. 角色不得超出白名单，不得凭空新增物种或人物。\n"
+        "6. 优先融合页面文字（OCR）到对应页叙述中。\n"
+        f"7. 叙事风格：{style}；目标年龄：{age}。\n"
+        f"8. 主角偏好：{hero or '无强制主角'}。\n"
+        f"9. 附加要求：{extra_prompt or '无'}。\n"
+        f"10. 绘本标题候选：{book_title or '未识别'}。\n"
+        f"角色白名单：{allowed_text}\n\n"
+        f"页面摘要：\n{outline_text}\n"
+    )
+
+    client = _get_qwen_client()
+    completion = await client.chat.completions.create(
+        model=settings.qwen_model,
+        temperature=0.4,
+        timeout=120,
+        messages=[
+            {"role": "system", "content": "你是儿童绘本叙事专家。"},
+            {"role": "user", "content": prompt},
+        ],
+    )
+    story = (completion.choices[0].message.content or "").strip()
+    if not story:
+        raise ValueError("模型未返回故事文本")
+
+    unknown_roles = _find_nonexistent_roles(story, allowed_characters)
+    if unknown_roles:
+        story = await _rewrite_story_with_constraints(
+            story_text=story,
+            allowed_characters=allowed_characters,
+            unknown_roles=unknown_roles,
+        )
+    return _sanitize_story_output(story)
+
+
+def _generate_story_template(
+    analysis_result: list[dict[str, Any]],
+    extra_prompt: str | None = None,
+    narration_style: str | None = None,
+    audience_age: str | None = None,
+    story_length: str | None = None,
+    character_name: str | None = None,
+    book_title: str | None = None,
+) -> str:
+    """模板兜底：每页一段，格式与 Qwen 输出一致。"""
+
+    style = (narration_style or "温柔").strip()
+    age = (audience_age or "3-6").strip()
+    pages = _sorted_pages_for_story(analysis_result, story_length)
+
+    lines: list[str] = []
+    for idx, item in enumerate(pages, start=1):
+        page_no = item.get("page", idx)
+        if "error" in item:
+            lines.append(f"第{page_no}页：这一页识别信息不完整，故事自然过渡到下一页。")
+            continue
+
+        roles = "、".join(item.get("角色", [])) if isinstance(item.get("角色"), list) else "人物"
+        actions = "、".join(item.get("动作", [])) if isinstance(item.get("动作"), list) else "活动"
+        scene = str(item.get("场景", "") or "一个场景")
+        mood = str(item.get("情绪", "") or "平静")
+        page_texts = item.get("画面文字", []) if isinstance(item.get("画面文字"), list) else []
+        ocr = "；".join([str(x).strip() for x in page_texts if str(x).strip()][:2])
+
+        sentence = f"第{page_no}页：在{scene}里，{roles}正在{actions}，氛围是{mood}，语气偏{style}，适合{age}岁阅读。"
+        if ocr:
+            sentence += f" 画面文字可见：{ocr}。"
+        lines.append(sentence)
+
+    if extra_prompt:
+        lines.append(f"补充要求：{extra_prompt}。")
+
+    return _sanitize_story_output("\n".join(lines))
+
+
+async def generate_story(
+    analysis_result: list[dict[str, Any]],
+    extra_prompt: str | None = None,
+    narration_style: str | None = None,
+    audience_age: str | None = None,
+    story_length: str | None = None,
+    character_name: str | None = None,
+) -> str:
+    """统一故事生成入口（最后覆盖版本）。"""
+
+    book_title = _extract_book_title(analysis_result)
+    provider = (settings.ai_provider or "mock").strip().lower()
+    logger.info(
+        "ai.generate_story.v3 provider=%s page_count=%s has_prompt=%s",
+        provider,
+        len(analysis_result),
+        bool(extra_prompt),
+    )
+
+    if provider == "qwen" and settings.qwen_api_key:
+        try:
+            story = await _generate_story_qwen_v2(
+                analysis_result=analysis_result,
+                extra_prompt=extra_prompt,
+                narration_style=narration_style,
+                audience_age=audience_age,
+                story_length=story_length,
+                character_name=character_name,
+                book_title=book_title,
+            )
+            return _sanitize_story_output(story)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("ai.generate_story.v3_qwen_failed fallback=template error=%s", exc)
+
+    story = _generate_story_template(
+        analysis_result=analysis_result,
+        extra_prompt=extra_prompt,
+        narration_style=narration_style,
+        audience_age=audience_age,
+        story_length=story_length,
+        character_name=character_name,
+        book_title=book_title,
+    )
+    return _sanitize_story_output(story)
 
 
 async def _generate_story_qwen(
@@ -211,6 +579,7 @@ async def _generate_story_qwen(
     audience_age: str | None = None,
     story_length: str | None = None,
     character_name: str | None = None,
+    book_title: str | None = None,
 ) -> str:
     """Qwen 二段式生成：先写故事，再做违规词重写。"""
 
@@ -249,8 +618,13 @@ async def _generate_story_qwen(
         "禁止新增其他物种角色（例如熊、兔、狐狸、狼、老虎等）。\n\n"
         f"结构化输入：{json.dumps(clean_pages, ensure_ascii=False)}"
     )
+    if book_title:
+        prompt += (
+            f"\n8. 已识别到本绘本标题候选：{book_title}。"
+            "请自然融入正文或开头，格式建议《标题》，不要杜撰新标题。"
+        )
     if hero:
-        prompt += f"\n8. 如需突出某个主角，请优先突出：{hero}。"
+        prompt += f"\n9. 如需突出某个主角，请优先突出：{hero}。"
 
     client = _get_qwen_client()
     completion = await client.chat.completions.create(
@@ -273,6 +647,9 @@ async def _generate_story_qwen(
             allowed_characters=allowed_characters,
             unknown_roles=unknown_roles,
         )
+
+    if book_title and book_title not in story and f"《{book_title}》" not in story:
+        story = f"《{book_title}》\n\n{story}"
 
     return story
 
@@ -299,6 +676,72 @@ def _build_allowed_characters(analysis_result: list[dict[str, Any]], hero: str) 
             seen.add(name)
             dedup.append(name)
     return dedup
+
+
+def _extract_book_title(analysis_result: list[dict[str, Any]]) -> str | None:
+    """从前几页 OCR 文本里提取绘本标题候选。"""
+
+    raw_lines: list[str] = []
+    for item in analysis_result[:3]:
+        if "error" in item:
+            continue
+        page_texts = item.get("画面文字", [])
+        if isinstance(page_texts, str):
+            page_texts = [page_texts]
+        if not isinstance(page_texts, list):
+            continue
+        for line in page_texts:
+            text = str(line).strip()
+            if text:
+                raw_lines.append(text)
+
+    if not raw_lines:
+        return None
+
+    stop_words = {
+        "出版社",
+        "出版单位",
+        "作者",
+        "著",
+        "译",
+        "isbn",
+        "copyright",
+        "全国百佳",
+    }
+    title_hints = {"绘本", "故事", "只老鼠", "早餐", "晚安", "冒险"}
+
+    candidates: list[tuple[int, str]] = []
+    seen: set[str] = set()
+    for raw in raw_lines:
+        for part in re.split(r"[，,。！？!?:：;；|/]+", raw):
+            text = re.sub(r"\s+", "", part).strip("《》“”\"'[]()（）")
+            if not text:
+                continue
+            lower_text = text.lower()
+            if any(word in lower_text for word in stop_words):
+                continue
+            if len(text) < 2 or len(text) > 20:
+                continue
+            if text in seen:
+                continue
+            seen.add(text)
+
+            score = 0
+            if any(hint in text for hint in title_hints):
+                score += 5
+            if "第" in text and "页" in text:
+                score -= 2
+            if re.search(r"[0-9]{4,}", text):
+                score -= 2
+            if re.fullmatch(r"[一二三四五六七八九十0-9]+", text):
+                score -= 2
+            score += max(0, 8 - abs(len(text) - 8))
+            candidates.append((score, text))
+
+    if not candidates:
+        return None
+    candidates.sort(key=lambda x: x[0], reverse=True)
+    return candidates[0][1]
 
 
 def _find_nonexistent_roles(story_text: str, allowed_characters: list[str]) -> list[str]:
@@ -380,6 +823,7 @@ def _generate_story_template(
     audience_age: str | None = None,
     story_length: str | None = None,
     character_name: str | None = None,
+    book_title: str | None = None,
 ) -> str:
     hero = (character_name or "").strip()
     style = narration_style or "温柔"
@@ -395,6 +839,9 @@ def _generate_story_template(
             f"{style}讲述：新的一天开始了。",
             f"目标年龄段：{age}。",
         ]
+
+    if book_title:
+        lines.insert(0, f"绘本标题：《{book_title}》。")
 
     limit = len(analysis_result)
     if (story_length or "medium") == "short":
@@ -465,6 +912,15 @@ def _normalize_vision_json(data: dict[str, Any]) -> dict[str, Any]:
         return text or default
 
     text_items = to_list(data.get("画面文字") or data.get("文字") or data.get("文本"))
+    raw_is_title = data.get("is_title_page", data.get("是否标题页", False))
+    if isinstance(raw_is_title, str):
+        is_title_page = raw_is_title.strip().lower() in {"true", "1", "yes", "y", "是"}
+    else:
+        is_title_page = bool(raw_is_title)
+
+    detected_title = to_str(data.get("detected_title") or data.get("识别标题"), "").strip()
+    detected_author = to_str(data.get("detected_author") or data.get("识别作者"), "").strip()
+
     return {
         "角色": to_list(data.get("角色")),
         "场景": to_str(data.get("场景"), "未知场景"),
@@ -472,6 +928,9 @@ def _normalize_vision_json(data: dict[str, Any]) -> dict[str, Any]:
         "情绪": to_str(data.get("情绪"), "中性"),
         "关键物体": to_list(data.get("关键物体")),
         "画面文字": text_items,
+        "is_title_page": is_title_page,
+        "detected_title": detected_title,
+        "detected_author": detected_author,
     }
 
 
@@ -490,7 +949,7 @@ def _image_path_to_data_url(image_path: str) -> str:
     return f"data:{mime};base64,{b64}"
 
 
-def evaluate_story_quality(analysis_result: list[dict[str, Any]], story_content: str) -> dict[str, Any]:
+def _evaluate_story_quality_legacy(analysis_result: list[dict[str, Any]], story_content: str) -> dict[str, Any]:
     page_count = len(analysis_result)
     hit_count = sum(1 for i in range(1, page_count + 1) if f"第{i}页" in story_content)
     coherence = round((hit_count / max(page_count, 1)) * 100)
@@ -512,3 +971,261 @@ def evaluate_story_quality(analysis_result: list[dict[str, Any]], story_content:
             "avg_line_length": round(avg_line_len, 2),
         },
     }
+
+
+def _extract_page_mentions(story_content: str) -> set[int]:
+    """从故事文本提取页码，兼容“第1页 / 1页 / 第 1 页”写法。"""
+
+    text = story_content or ""
+    # \u7b2c=第, \u9875=页。使用 unicode 转义可规避源码编码问题。
+    pattern = re.compile(r"(?:\u7b2c\s*)?(\d{1,3})\s*\u9875")
+    page_numbers: set[int] = set()
+    for match in pattern.finditer(text):
+        try:
+            page_numbers.add(int(match.group(1)))
+        except (TypeError, ValueError):
+            continue
+    return page_numbers
+
+
+def evaluate_story_quality(analysis_result: list[dict[str, Any]], story_content: str) -> dict[str, Any]:
+    """基础规则评分：连贯性 + 年龄适配。"""
+
+    page_count = len(analysis_result)
+    referenced_pages = _extract_page_mentions(story_content)
+
+    expected_pages: set[int] = set()
+    for index, item in enumerate(analysis_result, start=1):
+        page_no = item.get("page", index)
+        if isinstance(page_no, int):
+            expected_pages.add(page_no)
+        else:
+            try:
+                expected_pages.add(int(page_no))
+            except (TypeError, ValueError):
+                expected_pages.add(index)
+
+    if not expected_pages:
+        hit_count = 0
+        coherence = 0
+    else:
+        hit_count = len(expected_pages.intersection(referenced_pages))
+        coherence = round((hit_count / len(expected_pages)) * 100)
+
+    lines = [line.strip() for line in (story_content or "").splitlines() if line.strip()]
+    avg_line_len = sum(len(line) for line in lines) / len(lines) if lines else 0.0
+    age_score = 90 if avg_line_len <= 35 else max(60, round(125 - avg_line_len))
+    overall = round(coherence * 0.6 + age_score * 0.4)
+
+    return {
+        "scores": {
+            "coherence": coherence,
+            "age_appropriateness": age_score,
+            "overall": overall,
+        },
+        "evidence": {
+            "page_count": page_count,
+            "expected_pages": sorted(expected_pages),
+            "referenced_pages": sorted(referenced_pages),
+            "page_hit_count": hit_count,
+            "avg_line_length": round(avg_line_len, 2),
+        },
+    }
+
+
+def _select_page_limit(story_length: str | None, total_pages: int) -> int:
+    """根据篇幅偏好计算参与叙事的页数上限。"""
+
+    mode = (story_length or "long").lower()
+    if mode == "short":
+        return min(4, total_pages)
+    if mode == "long":
+        return total_pages
+    return min(8, total_pages)
+
+
+def _sorted_pages_for_story(analysis_result: list[dict[str, Any]], story_length: str | None) -> list[dict[str, Any]]:
+    """按页码排序并按篇幅截断，仅保留可用页面。"""
+
+    pages = sorted(analysis_result, key=lambda x: int(x.get("page", 0) or 0))
+    limit = _select_page_limit(story_length, len(pages))
+    return pages[:limit]
+
+
+def _build_page_outline(analysis_result: list[dict[str, Any]], story_length: str | None) -> list[str]:
+    """构造结构化页摘要，供模型生成连贯故事。"""
+
+    lines: list[str] = []
+    for item in _sorted_pages_for_story(analysis_result, story_length):
+        page_no = item.get("page", "?")
+        if "error" in item:
+            lines.append(f"第{page_no}页：识别失败，叙事中可以简短过渡。")
+            continue
+
+        roles = "、".join(item.get("角色", [])) if isinstance(item.get("角色"), list) else ""
+        actions = "、".join(item.get("动作", [])) if isinstance(item.get("动作"), list) else ""
+        objects = "、".join(item.get("关键物体", [])) if isinstance(item.get("关键物体"), list) else ""
+        scene = str(item.get("场景", "") or "")
+        mood = str(item.get("情绪", "") or "")
+        page_texts = item.get("画面文字", []) if isinstance(item.get("画面文字"), list) else []
+        ocr = " | ".join([str(x).strip() for x in page_texts if str(x).strip()][:4])
+
+        lines.append(
+            f"第{page_no}页：角色[{roles or '未识别'}]；场景[{scene or '未识别'}]；"
+            f"动作[{actions or '未识别'}]；情绪[{mood or '未识别'}]；"
+            f"物体[{objects or '未识别'}]；画面文字[{ocr or '无'}]。"
+        )
+    return lines
+
+
+async def _generate_story_qwen_v2(
+    analysis_result: list[dict[str, Any]],
+    extra_prompt: str | None = None,
+    narration_style: str | None = None,
+    audience_age: str | None = None,
+    story_length: str | None = None,
+    character_name: str | None = None,
+    book_title: str | None = None,
+) -> str:
+    """连贯性增强版 Qwen 生成。"""
+
+    style = (narration_style or "温柔").strip()
+    age = (audience_age or "3-6").strip()
+    hero = (character_name or "").strip()
+    allowed_characters = _build_allowed_characters(analysis_result, hero)
+    allowed_text = "、".join(allowed_characters)
+    outline = _build_page_outline(analysis_result, story_length)
+    outline_text = "\n".join(outline) if outline else "无页面信息"
+
+    prompt = (
+        "请根据给定页摘要生成一个儿童绘本故事，重点提升叙事连贯性。\n"
+        "硬性要求：\n"
+        "1. 必须按页码顺序推进剧情，不要跳页，不要打乱顺序。\n"
+        "2. 对每个有效页面都至少提及一次“第X页”，确保图文对应。\n"
+        "3. 结构采用“开端-发展-高潮/转折-结尾”，段落之间要有承接词。\n"
+        "4. 禁止新增白名单以外角色，不要凭空造物种。\n"
+        "5. 优先吸收画面文字（OCR）作为台词或叙事细节。\n"
+        "6. 语言自然、有温度，适合目标年龄阅读。\n\n"
+        f"叙事风格：{style}\n"
+        f"目标年龄：{age}\n"
+        f"主角偏好：{hero or '无强制主角'}\n"
+        f"角色白名单：{allowed_text}\n"
+        f"附加要求：{extra_prompt or '无'}\n"
+        f"绘本标题候选：{book_title or '未识别'}\n\n"
+        f"页摘要：\n{outline_text}\n"
+    )
+
+    client = _get_qwen_client()
+    completion = await client.chat.completions.create(
+        model=settings.qwen_model,
+        temperature=0.5,
+        timeout=120,
+        messages=[
+            {"role": "system", "content": "你是儿童绘本叙事专家，擅长写连贯、自然、温暖的故事。"},
+            {"role": "user", "content": prompt},
+        ],
+    )
+    story = (completion.choices[0].message.content or "").strip()
+    if not story:
+        raise ValueError("模型未返回故事文本")
+
+    unknown_roles = _find_nonexistent_roles(story, allowed_characters)
+    if unknown_roles:
+        story = await _rewrite_story_with_constraints(
+            story_text=story,
+            allowed_characters=allowed_characters,
+            unknown_roles=unknown_roles,
+        )
+    return story
+
+
+def _generate_story_template(
+    analysis_result: list[dict[str, Any]],
+    extra_prompt: str | None = None,
+    narration_style: str | None = None,
+    audience_age: str | None = None,
+    story_length: str | None = None,
+    character_name: str | None = None,
+    book_title: str | None = None,
+) -> str:
+    """连贯性增强版模板兜底。"""
+
+    hero = (character_name or "").strip()
+    style = (narration_style or "温柔").strip()
+    age = (audience_age or "3-6").strip()
+    pages = _sorted_pages_for_story(analysis_result, story_length)
+
+    title_line = f"《{book_title}》" if book_title else "这本绘本"
+    lines: list[str] = [f"{style}讲述：{title_line}的故事开始了，面向{age}岁读者。"]
+    if hero:
+        lines.append(f"这一次，我们跟着{hero}一起往前走。")
+
+    transitions = ["先是", "接着", "随后", "然后", "紧接着", "最后"]
+
+    for idx, item in enumerate(pages):
+        page_no = item.get("page", "?")
+        prefix = transitions[min(idx, len(transitions) - 1)]
+        if "error" in item:
+            lines.append(f"{prefix}第{page_no}页信息不完整，故事轻轻过渡到下一页。")
+            continue
+
+        roles = "、".join(item.get("角色", [])) if isinstance(item.get("角色"), list) else "角色"
+        actions = "、".join(item.get("动作", [])) if isinstance(item.get("动作"), list) else "行动"
+        scene = str(item.get("场景", "") or "场景")
+        mood = str(item.get("情绪", "") or "平稳")
+        page_texts = item.get("画面文字", []) if isinstance(item.get("画面文字"), list) else []
+        ocr = "；".join([str(x).strip() for x in page_texts if str(x).strip()][:2])
+
+        sentence = f"{prefix}第{page_no}页，{roles}来到{scene}，他们{actions}，气氛是{mood}。"
+        if ocr:
+            sentence += f" 画面里还写着：{ocr}。"
+        lines.append(sentence)
+
+    if extra_prompt:
+        lines.append(f"补充要求：{extra_prompt}。")
+    lines.append("故事在前后呼应中收束，大家在这次经历里都有了新的收获。")
+    return "\n".join(lines)
+
+
+async def generate_story(
+    analysis_result: list[dict[str, Any]],
+    extra_prompt: str | None = None,
+    narration_style: str | None = None,
+    audience_age: str | None = None,
+    story_length: str | None = None,
+    character_name: str | None = None,
+) -> str:
+    """连贯性增强版统一入口。"""
+
+    book_title = _extract_book_title(analysis_result)
+    provider = (settings.ai_provider or "mock").strip().lower()
+    logger.info(
+        "ai.generate_story.v2 provider=%s page_count=%s has_prompt=%s",
+        provider,
+        len(analysis_result),
+        bool(extra_prompt),
+    )
+
+    if provider == "qwen" and settings.qwen_api_key:
+        try:
+            return await _generate_story_qwen_v2(
+                analysis_result=analysis_result,
+                extra_prompt=extra_prompt,
+                narration_style=narration_style,
+                audience_age=audience_age,
+                story_length=story_length,
+                character_name=character_name,
+                book_title=book_title,
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("ai.generate_story.v2_qwen_failed fallback=template error=%s", exc)
+
+    return _generate_story_template(
+        analysis_result=analysis_result,
+        extra_prompt=extra_prompt,
+        narration_style=narration_style,
+        audience_age=audience_age,
+        story_length=story_length,
+        character_name=character_name,
+        book_title=book_title,
+    )

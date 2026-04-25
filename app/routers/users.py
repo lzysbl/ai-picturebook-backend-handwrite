@@ -2,14 +2,16 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import settings
 from app.db.session import get_db
 from app.schemas.common import ApiResponse
 from app.schemas.user import LoginResponseData, UserInfo, UserLoginRequest, UserRegisterRequest
 from app.services.user_service import authenticate_user, create_user, get_user_by_id
+from app.utils.rate_limiter import enforce_rate_limit
 from app.utils.security import JWTError, create_access_token, decode_access_token
 
 router = APIRouter(prefix="/api/users", tags=["Users"])
@@ -44,9 +46,17 @@ async def get_current_user(
 @router.post("/register", response_model=ApiResponse)
 async def register(
     payload: UserRegisterRequest,
+    request: Request,
     db: AsyncSession = Depends(get_db),
 ) -> ApiResponse:
     """用户注册接口。"""
+
+    await enforce_rate_limit(
+        request=request,
+        action="users:register",
+        limit=settings.rate_limit_register_limit,
+        window_seconds=settings.rate_limit_register_window_seconds,
+    )
 
     try:
         user = await create_user(db, payload)
@@ -71,9 +81,17 @@ async def register(
 @router.post("/login", response_model=ApiResponse)
 async def login(
     payload: UserLoginRequest,
+    request: Request,
     db: AsyncSession = Depends(get_db),
 ) -> ApiResponse:
     """用户登录接口。"""
+
+    await enforce_rate_limit(
+        request=request,
+        action="users:login",
+        limit=settings.rate_limit_login_limit,
+        window_seconds=settings.rate_limit_login_window_seconds,
+    )
 
     user = await authenticate_user(db, payload.username, payload.password)
     if not user:

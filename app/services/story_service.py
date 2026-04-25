@@ -53,3 +53,14 @@ async def get_story_by_id_and_user(db: AsyncSession, story_id: int, user_id: int
     stmt = select(Story).where(Story.id == story_id, Story.user_id == user_id)
     result = await db.execute(stmt)
     return result.scalar_one_or_none()
+
+
+async def delete_story_by_id_and_user(db: AsyncSession, story_id: int, user_id: int) -> bool:
+    """按 story_id + user_id 删除故事记录。"""
+
+    story = await get_story_by_id_and_user(db, story_id, user_id)
+    if not story:
+        return False
+    await db.delete(story)
+    await db.commit()
+    return True

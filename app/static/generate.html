@@ -13,7 +13,7 @@
         <div class="brand-badge"></div>
         <div>
           <h1 class="brand-title">故事生成</h1>
-          <p class="brand-sub">根据绘本图片一键生成故事</p>
+          <p class="brand-sub">根据绘本图片一键生成故事并自动给出质量评价</p>
         </div>
       </div>
       <div class="link-row">
@@ -41,10 +41,37 @@
               <div id="book-cover-preview-text" class="book-select-preview-text"></div>
             </div>
           </div>
+
           <div class="field">
             <label class="field-label" for="prompt">额外提示词（可选）</label>
-            <textarea id="prompt" class="textarea" placeholder="例如：用温柔语气，突出勇敢主题"></textarea>
+            <textarea id="prompt" class="textarea" placeholder="例如：语气更温柔，突出家庭主题"></textarea>
           </div>
+
+          <div class="field">
+            <label class="field-label" for="audience-age">目标年龄段</label>
+            <select id="audience-age" class="select">
+              <option value="3-6" selected>3-6岁（低幼）</option>
+              <option value="6-8">6-8岁（幼小衔接）</option>
+              <option value="8-10">8-10岁（小学低年级）</option>
+              <option value="10-12">10-12岁（小学中高年级）</option>
+            </select>
+          </div>
+
+          <div class="field inline-options">
+            <label class="check-line">
+              <input id="include-judge" type="checkbox" />
+              生成后启用深度评估（LLM，耗时更长）
+            </label>
+            <label class="field-label" for="judge-samples">深度评估采样次数</label>
+            <select id="judge-samples" class="select" disabled>
+              <option value="1">1 次（推荐）</option>
+              <option value="2">2 次</option>
+              <option value="3">3 次</option>
+              <option value="4">4 次</option>
+              <option value="5">5 次</option>
+            </select>
+          </div>
+
           <button class="btn btn-primary" type="submit">生成故事</button>
         </form>
 
@@ -56,6 +83,12 @@
           <div class="progress-track">
             <div id="progress-bar" class="progress-bar"></div>
           </div>
+        </div>
+
+        <div id="quality-panel" class="quality-panel hidden">
+          <h3>本次评价结果</h3>
+          <div id="quality-summary" class="quality-summary"></div>
+          <pre id="quality-detail" class="quality-detail"></pre>
         </div>
 
         <pre id="generated-story" class="story-output"></pre>
