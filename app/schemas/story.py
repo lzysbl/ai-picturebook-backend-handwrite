@@ -13,10 +13,12 @@ class StoryGenerateRequest(BaseModel):
 
     book_id: int = Field(..., description="绘本 ID")
     prompt: str | None = Field(default=None, description="额外提示词")
-    narration_style: str | None = Field(default="温柔", description="讲述风格")
+    narration_style: str | None = Field(default="温柔", description="叙述风格")
     audience_age: str | None = Field(default="3-6", description="目标年龄")
     story_length: str | None = Field(default="medium", description="故事长度")
     character_name: str | None = Field(default=None, description="主角名称")
+    include_judge: bool = Field(default=False, description="是否在生成后启用 LLM 深度评估")
+    judge_samples: int | None = Field(default=None, description="LLM 评审采样次数（1~5）")
 
 
 class StoryEvaluateRequest(BaseModel):
@@ -24,6 +26,8 @@ class StoryEvaluateRequest(BaseModel):
 
     book_id: int = Field(..., description="绘本 ID")
     story_content: str = Field(..., min_length=1, description="待评估故事文本")
+    include_judge: bool = Field(default=False, description="是否启用 LLM 评审")
+    judge_samples: int | None = Field(default=None, description="LLM 评审采样次数（1~5）")
 
 
 class StoryInfo(BaseModel):
@@ -47,3 +51,4 @@ class StoryGenerateData(BaseModel):
     story_content: str
     quality: dict[str, Any]
     story: StoryInfo
+

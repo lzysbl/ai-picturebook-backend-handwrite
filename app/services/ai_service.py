@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import json
+import logging
 import re
 from pathlib import Path
 from typing import Any, Awaitable, Callable
@@ -16,6 +17,7 @@ from app.core.config import settings
 
 ProgressCallback = Callable[[int, int, str], Awaitable[None] | None]
 MAX_CONCURRENCY = 8
+logger = logging.getLogger(__name__)
 
 # 常见角色后缀，用于识别“白名单之外的角色名”
 ROLE_ENTITY_MARKERS = [
@@ -52,6 +54,7 @@ async def analyze_images(
         return []
 
     provider = (settings.ai_provider or "mock").strip().lower()
+    logger.info("ai.analyze_images provider=%s image_count=%s", provider, len(image_paths))
     if provider == "qwen":
         return await _analyze_images_qwen(image_paths, progress_callback=progress_callback)
     return _analyze_images_mock(image_paths)
@@ -91,6 +94,7 @@ async def _analyze_images_qwen(
     """Qwen 识别：最多并发 8 张，每张完成更新进度。"""
 
     if not settings.qwen_api_key:
+        logger.warning("ai.analyze_images qwen_api_key_missing fallback=mock")
         return _analyze_images_mock(image_paths)
 
     total = len(image_paths)
@@ -115,6 +119,7 @@ async def _analyze_images_qwen(
                 item.update({"page": page_no, "image_path": image_path})
                 results[page_no] = item
             except Exception as exc:  # noqa: BLE001
+                logger.warning("ai.analyze_page_failed page=%s error=%s", page_no, exc)
                 results[page_no] = {
                     "page": page_no,
                     "image_path": image_path,
@@ -180,7 +185,14 @@ async def generate_story(
 ) -> str:
     """生成故事：优先 Qwen 润色，失败则回退模板。"""
 
+    book_title = _extract_book_title(analysis_result)
     provider = (settings.ai_provider or "mock").strip().lower()
+    logger.info(
+        "ai.generate_story provider=%s page_count=%s has_prompt=%s",
+        provider,
+        len(analysis_result),
+        bool(extra_prompt),
+    )
     if provider == "qwen" and settings.qwen_api_key:
         try:
             return await _generate_story_qwen(
@@ -190,9 +202,10 @@ async def generate_story(
                 audience_age=audience_age,
                 story_length=story_length,
                 character_name=character_name,
+                book_title=book_title,
             )
-        except Exception:  # noqa: BLE001
-            pass
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("ai.generate_story_qwen_failed fallback=template error=%s", exc)
 
     return _generate_story_template(
         analysis_result=analysis_result,
@@ -201,6 +214,7 @@ async def generate_story(
         audience_age=audience_age,
         story_length=story_length,
         character_name=character_name,
+        book_title=book_title,
     )
 
 
@@ -211,6 +225,7 @@ async def _generate_story_qwen(
     audience_age: str | None = None,
     story_length: str | None = None,
     character_name: str | None = None,
+    book_title: str | None = None,
 ) -> str:
     """Qwen 二段式生成：先写故事，再做违规词重写。"""
 
@@ -249,8 +264,13 @@ async def _generate_story_qwen(
         "禁止新增其他物种角色（例如熊、兔、狐狸、狼、老虎等）。\n\n"
         f"结构化输入：{json.dumps(clean_pages, ensure_ascii=False)}"
     )
+    if book_title:
+        prompt += (
+            f"\n8. 已识别到本绘本标题候选：{book_title}。"
+            "请自然融入正文或开头，格式建议《标题》，不要杜撰新标题。"
+        )
     if hero:
-        prompt += f"\n8. 如需突出某个主角，请优先突出：{hero}。"
+        prompt += f"\n9. 如需突出某个主角，请优先突出：{hero}。"
 
     client = _get_qwen_client()
     completion = await client.chat.completions.create(
@@ -273,6 +293,9 @@ async def _generate_story_qwen(
             allowed_characters=allowed_characters,
             unknown_roles=unknown_roles,
         )
+
+    if book_title and book_title not in story and f"《{book_title}》" not in story:
+        story = f"《{book_title}》\n\n{story}"
 
     return story
 
@@ -299,6 +322,72 @@ def _build_allowed_characters(analysis_result: list[dict[str, Any]], hero: str) 
             seen.add(name)
             dedup.append(name)
     return dedup
+
+
+def _extract_book_title(analysis_result: list[dict[str, Any]]) -> str | None:
+    """从前几页 OCR 文本里提取绘本标题候选。"""
+
+    raw_lines: list[str] = []
+    for item in analysis_result[:3]:
+        if "error" in item:
+            continue
+        page_texts = item.get("画面文字", [])
+        if isinstance(page_texts, str):
+            page_texts = [page_texts]
+        if not isinstance(page_texts, list):
+            continue
+        for line in page_texts:
+            text = str(line).strip()
+            if text:
+                raw_lines.append(text)
+
+    if not raw_lines:
+        return None
+
+    stop_words = {
+        "出版社",
+        "出版单位",
+        "作者",
+        "著",
+        "译",
+        "isbn",
+        "copyright",
+        "全国百佳",
+    }
+    title_hints = {"绘本", "故事", "只老鼠", "早餐", "晚安", "冒险"}
+
+    candidates: list[tuple[int, str]] = []
+    seen: set[str] = set()
+    for raw in raw_lines:
+        for part in re.split(r"[，,。！？!?:：;；|/]+", raw):
+            text = re.sub(r"\s+", "", part).strip("《》“”\"'[]()（）")
+            if not text:
+                continue
+            lower_text = text.lower()
+            if any(word in lower_text for word in stop_words):
+                continue
+            if len(text) < 2 or len(text) > 20:
+                continue
+            if text in seen:
+                continue
+            seen.add(text)
+
+            score = 0
+            if any(hint in text for hint in title_hints):
+                score += 5
+            if "第" in text and "页" in text:
+                score -= 2
+            if re.search(r"[0-9]{4,}", text):
+                score -= 2
+            if re.fullmatch(r"[一二三四五六七八九十0-9]+", text):
+                score -= 2
+            score += max(0, 8 - abs(len(text) - 8))
+            candidates.append((score, text))
+
+    if not candidates:
+        return None
+    candidates.sort(key=lambda x: x[0], reverse=True)
+    return candidates[0][1]
 
 
 def _find_nonexistent_roles(story_text: str, allowed_characters: list[str]) -> list[str]:
@@ -380,6 +469,7 @@ def _generate_story_template(
     audience_age: str | None = None,
     story_length: str | None = None,
     character_name: str | None = None,
+    book_title: str | None = None,
 ) -> str:
     hero = (character_name or "").strip()
     style = narration_style or "温柔"
@@ -395,6 +485,9 @@ def _generate_story_template(
             f"{style}讲述：新的一天开始了。",
             f"目标年龄段：{age}。",
         ]
+
+    if book_title:
+        lines.insert(0, f"绘本标题：《{book_title}》。")
 
     limit = len(analysis_result)
     if (story_length or "medium") == "short":
@@ -490,7 +583,7 @@ def _image_path_to_data_url(image_path: str) -> str:
     return f"data:{mime};base64,{b64}"
 
 
-def evaluate_story_quality(analysis_result: list[dict[str, Any]], story_content: str) -> dict[str, Any]:
+def _evaluate_story_quality_legacy(analysis_result: list[dict[str, Any]], story_content: str) -> dict[str, Any]:
     page_count = len(analysis_result)
     hit_count = sum(1 for i in range(1, page_count + 1) if f"第{i}页" in story_content)
     coherence = round((hit_count / max(page_count, 1)) * 100)
@@ -508,6 +601,66 @@ def evaluate_story_quality(analysis_result: list[dict[str, Any]], story_content:
         },
         "evidence": {
             "page_count": page_count,
+            "page_hit_count": hit_count,
+            "avg_line_length": round(avg_line_len, 2),
+        },
+    }
+
+
+def _extract_page_mentions(story_content: str) -> set[int]:
+    """从故事文本提取页码，兼容“第1页 / 1页 / 第 1 页”写法。"""
+
+    text = story_content or ""
+    # \u7b2c=第, \u9875=页。使用 unicode 转义可规避源码编码问题。
+    pattern = re.compile(r"(?:\u7b2c\s*)?(\d{1,3})\s*\u9875")
+    page_numbers: set[int] = set()
+    for match in pattern.finditer(text):
+        try:
+            page_numbers.add(int(match.group(1)))
+        except (TypeError, ValueError):
+            continue
+    return page_numbers
+
+
+def evaluate_story_quality(analysis_result: list[dict[str, Any]], story_content: str) -> dict[str, Any]:
+    """基础规则评分：连贯性 + 年龄适配。"""
+
+    page_count = len(analysis_result)
+    referenced_pages = _extract_page_mentions(story_content)
+
+    expected_pages: set[int] = set()
+    for index, item in enumerate(analysis_result, start=1):
+        page_no = item.get("page", index)
+        if isinstance(page_no, int):
+            expected_pages.add(page_no)
+        else:
+            try:
+                expected_pages.add(int(page_no))
+            except (TypeError, ValueError):
+                expected_pages.add(index)
+
+    if not expected_pages:
+        hit_count = 0
+        coherence = 0
+    else:
+        hit_count = len(expected_pages.intersection(referenced_pages))
+        coherence = round((hit_count / len(expected_pages)) * 100)
+
+    lines = [line.strip() for line in (story_content or "").splitlines() if line.strip()]
+    avg_line_len = sum(len(line) for line in lines) / len(lines) if lines else 0.0
+    age_score = 90 if avg_line_len <= 35 else max(60, round(125 - avg_line_len))
+    overall = round(coherence * 0.6 + age_score * 0.4)
+
+    return {
+        "scores": {
+            "coherence": coherence,
+            "age_appropriateness": age_score,
+            "overall": overall,
+        },
+        "evidence": {
+            "page_count": page_count,
+            "expected_pages": sorted(expected_pages),
+            "referenced_pages": sorted(referenced_pages),
             "page_hit_count": hit_count,
             "avg_line_length": round(avg_line_len, 2),
         },
