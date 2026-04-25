@@ -51,3 +51,4 @@ class StoryGenerateData(BaseModel):
     story_content: str
     quality: dict[str, Any]
     story: StoryInfo
+

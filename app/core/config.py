@@ -37,6 +37,18 @@ class Settings(BaseSettings):
         validation_alias="RATE_LIMIT_STORY_SUBMIT_WINDOW_SECONDS",
     )
 
+    # 限流配置
+    rate_limit_enabled: bool = Field(default=True, validation_alias="RATE_LIMIT_ENABLED")
+    rate_limit_login_limit: int = Field(default=10, validation_alias="RATE_LIMIT_LOGIN_LIMIT")
+    rate_limit_login_window_seconds: int = Field(default=60, validation_alias="RATE_LIMIT_LOGIN_WINDOW_SECONDS")
+    rate_limit_register_limit: int = Field(default=5, validation_alias="RATE_LIMIT_REGISTER_LIMIT")
+    rate_limit_register_window_seconds: int = Field(default=300, validation_alias="RATE_LIMIT_REGISTER_WINDOW_SECONDS")
+    rate_limit_story_submit_limit: int = Field(default=5, validation_alias="RATE_LIMIT_STORY_SUBMIT_LIMIT")
+    rate_limit_story_submit_window_seconds: int = Field(
+        default=300,
+        validation_alias="RATE_LIMIT_STORY_SUBMIT_WINDOW_SECONDS",
+    )
+
     # 认证配置
     secret_key: str = Field(default="please_change_me", validation_alias="SECRET_KEY")
     access_token_expire_minutes: int = Field(default=120, validation_alias="ACCESS_TOKEN_EXPIRE_MINUTES")
