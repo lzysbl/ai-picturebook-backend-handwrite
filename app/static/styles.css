@@ -195,6 +195,8 @@ a {
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
   padding: 10px 12px;
+  min-height: 44px;
+  line-height: 1.4;
   font: inherit;
   color: var(--text);
   background: rgba(255, 255, 255, 0.9);
@@ -319,7 +321,11 @@ a {
 
 .toolbar-select {
   min-width: 180px;
-  height: 40px;
+  height: auto;
+  min-height: 44px;
+  padding-top: 8px;
+  padding-bottom: 8px;
+  line-height: 1.4;
 }
 
 .inline {

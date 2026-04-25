@@ -988,6 +988,105 @@ def _extract_page_mentions(story_content: str) -> set[int]:
     return page_numbers
 
 
+def _build_readability_units(story_content: str) -> list[str]:
+    """Build short readability units from story text for age scoring.
+
+    Why:
+    - Current story format is often "第X页：...."，single line can be very long.
+    - Using line length directly underestimates readability.
+    - We split by sentence + clause punctuation to measure child-friendly rhythm.
+    """
+
+    text = (story_content or "").strip()
+    if not text:
+        return []
+
+    # Remove title/author header lines if present.
+    cleaned_lines: list[str] = []
+    for line in text.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        if line.startswith("《") and line.endswith("》"):
+            continue
+        if line.startswith("文／") or line.startswith("文/"):
+            continue
+        # Remove page prefix: 第12页： / 第12页:
+        line = re.sub(r"^\s*第\s*\d+\s*页\s*[：:]\s*", "", line)
+        if line:
+            cleaned_lines.append(line)
+
+    merged = "\n".join(cleaned_lines)
+    if not merged.strip():
+        return []
+
+    # Split into sentences first, then smaller clauses.
+    sentence_parts = re.split(r"[。！？!?；;]+", merged)
+    units: list[str] = []
+    for part in sentence_parts:
+        part = part.strip()
+        if not part:
+            continue
+        clauses = re.split(r"[，,、：:]+", part)
+        for clause in clauses:
+            clause = re.sub(r"\s+", "", clause.strip())
+            if clause:
+                units.append(clause)
+    return units
+
+
+def _age_score_from_readability(story_content: str) -> tuple[int, dict[str, Any]]:
+    """Age-appropriateness score based on Chinese readability units."""
+
+    # Keep old metric for compatibility/debug.
+    lines = [line.strip() for line in (story_content or "").splitlines() if line.strip()]
+    avg_line_len = sum(len(line) for line in lines) / len(lines) if lines else 0.0
+
+    units = _build_readability_units(story_content)
+    if not units:
+        return 60, {
+            "avg_line_length": round(avg_line_len, 2),
+            "avg_unit_length": 0.0,
+            "unit_count": 0,
+            "long_unit_ratio": 1.0,
+            "very_long_unit_ratio": 1.0,
+        }
+
+    lengths = [len(unit) for unit in units]
+    unit_count = len(lengths)
+    avg_unit_len = sum(lengths) / unit_count
+    long_unit_ratio = sum(1 for n in lengths if n > 26) / unit_count
+    very_long_unit_ratio = sum(1 for n in lengths if n > 40) / unit_count
+
+    # Friendly defaults for children's storytelling.
+    score = 95.0
+
+    # Penalize too-long average units (main factor).
+    if avg_unit_len > 18:
+        score -= (avg_unit_len - 18) * 1.3
+
+    # Penalize too many long/very-long clauses.
+    if long_unit_ratio > 0.35:
+        score -= (long_unit_ratio - 0.35) * 45
+    if very_long_unit_ratio > 0.10:
+        score -= (very_long_unit_ratio - 0.10) * 90
+
+    # If text is long but punctuation/clause count is sparse, readability drops.
+    merged_len = len(re.sub(r"\s+", "", story_content or ""))
+    if merged_len > 180 and unit_count < 8:
+        score -= 8
+
+    age_score = max(60, min(98, round(score)))
+    evidence = {
+        "avg_line_length": round(avg_line_len, 2),
+        "avg_unit_length": round(avg_unit_len, 2),
+        "unit_count": unit_count,
+        "long_unit_ratio": round(long_unit_ratio, 3),
+        "very_long_unit_ratio": round(very_long_unit_ratio, 3),
+    }
+    return age_score, evidence
+
+
 def evaluate_story_quality(analysis_result: list[dict[str, Any]], story_content: str) -> dict[str, Any]:
     """基础规则评分：连贯性 + 年龄适配。"""
 
@@ -1012,9 +1111,7 @@ def evaluate_story_quality(analysis_result: list[dict[str, Any]], story_content:
         hit_count = len(expected_pages.intersection(referenced_pages))
         coherence = round((hit_count / len(expected_pages)) * 100)
 
-    lines = [line.strip() for line in (story_content or "").splitlines() if line.strip()]
-    avg_line_len = sum(len(line) for line in lines) / len(lines) if lines else 0.0
-    age_score = 90 if avg_line_len <= 35 else max(60, round(125 - avg_line_len))
+    age_score, age_evidence = _age_score_from_readability(story_content)
     overall = round(coherence * 0.6 + age_score * 0.4)
 
     return {
@@ -1028,7 +1125,7 @@ def evaluate_story_quality(analysis_result: list[dict[str, Any]], story_content:
             "expected_pages": sorted(expected_pages),
             "referenced_pages": sorted(referenced_pages),
             "page_hit_count": hit_count,
-            "avg_line_length": round(avg_line_len, 2),
+            **age_evidence,
         },
     }
 

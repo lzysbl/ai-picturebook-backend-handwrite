@@ -16,6 +16,7 @@ from openai import AsyncOpenAI
 from app.core.config import settings
 
 _client: AsyncOpenAI | None = None
+DEFAULT_NARRATION_CONSTRAINT = "减少背景复述，重点写人物动作和情节推进。"
 
 # 兼容“正常中文 key”和历史编码异常 key。
 ROLE_KEYS = ("角色", "characters", "瑙掕壊")
@@ -249,6 +250,82 @@ def _sanitize_story_output(text: str) -> str:
     return "\n".join(line.rstrip() for line in content.splitlines() if line.strip())
 
 
+_PAGE_LINE_PATTERN = re.compile(r"^(第\s*\d+\s*页[：:])\s*(.+)$")
+
+
+def _opening_signature(content: str) -> str:
+    """Build compact opening signature for cross-page repetition detection."""
+    if not content:
+        return ""
+    first_span = re.split(r"[，,。！？；;]", content, maxsplit=1)[0].strip()
+    normalized = re.sub(
+        r"(深蓝色|夜晚|白色|绿色|红色|户外|草地|背景|星空|天空|房子|树|星星|月亮|旁边|周围|上方|下方|的|有|在|一座|一只|一棵|一个|正在|静静|轻轻|微风|仿佛|里|中|外)",
+        "",
+        first_span,
+    )
+    normalized = re.sub(r"[^\u4e00-\u9fa5A-Za-z0-9]", "", normalized)
+    return normalized[:18]
+
+
+def _remove_leading_sentence_or_clause(content: str) -> str:
+    """Remove first sentence/clause if it is repetitive background setup."""
+    text = (content or "").strip()
+    if not text:
+        return text
+
+    full_sentence = re.match(r"^[^。！？!?]*[。！？!?]\s*(.*)$", text)
+    if full_sentence:
+        tail = (full_sentence.group(1) or "").strip()
+        if len(tail) >= 10:
+            return tail
+
+    first_clause = re.match(r"^[^，,；;]*[，,；;]\s*(.*)$", text)
+    if first_clause:
+        tail = (first_clause.group(1) or "").strip()
+        if len(tail) >= 10:
+            return tail
+    return text
+
+
+def _dedupe_background_repetition(story_text: str) -> str:
+    """Reduce cross-page repeated opening backgrounds but keep page events."""
+    lines = [line.strip() for line in (story_text or "").splitlines() if line.strip()]
+    if not lines:
+        return story_text
+
+    deduped_lines: list[str] = []
+    recent_signatures: list[str] = []
+
+    for line in lines:
+        matched = _PAGE_LINE_PATTERN.match(line)
+        if not matched:
+            deduped_lines.append(line)
+            continue
+
+        page_prefix = matched.group(1)
+        content = matched.group(2).strip()
+        signature = _opening_signature(content)
+
+        is_repetitive = False
+        if signature and len(signature) >= 6:
+            for prev in recent_signatures:
+                if signature == prev or signature in prev or prev in signature:
+                    is_repetitive = True
+                    break
+
+        if is_repetitive:
+            content = _remove_leading_sentence_or_clause(content)
+
+        deduped_lines.append(f"{page_prefix}{content}")
+
+        if signature:
+            recent_signatures.append(signature)
+            if len(recent_signatures) > 3:
+                recent_signatures.pop(0)
+
+    return "\n".join(deduped_lines)
+
+
 def _ensure_header(story: str, title: str, author: str) -> str:
     """确保最终文本前两行固定是标题和作者。"""
     title_line = f"《{(title or '未命名绘本').strip()}》"
@@ -327,6 +404,7 @@ def _build_template_story(
         lines.append(f"补充要求：{extra_prompt}。")
 
     body = _sanitize_story_output("\n".join(lines))
+    body = _dedupe_background_repetition(body)
     return _ensure_header(body, title, author)
 
 
@@ -343,6 +421,11 @@ async def _generate_with_qwen(
     style = (narration_style or "温柔").strip()
     age = (audience_age or "3-6").strip()
     hero = (character_name or "").strip()
+    merged_extra_prompt = (
+        f"{extra_prompt} {DEFAULT_NARRATION_CONSTRAINT}".strip()
+        if extra_prompt
+        else DEFAULT_NARRATION_CONSTRAINT
+    )
     page_tags = [f"第{int(item.get('page', idx))}页" for idx, item in enumerate(pages, start=1)]
 
     prompt = (
@@ -355,7 +438,9 @@ async def _generate_with_qwen(
         f"5. 必须按顺序覆盖：{'、'.join(page_tags)}。\n"
         "6. 不要新增输入中不存在的角色。\n"
         "7. 不要把封面元信息原样写进正文（如 出版社、著译信息、角色编号名单）。\n"
-        f"风格：{style}；年龄段：{age}；主角偏好：{hero or '无'}；附加要求：{extra_prompt or '无'}。\n"
+        "8. 不要在相邻页面重复同一类背景开场句（例如“深蓝色的夜空、星星闪烁”）。\n"
+        "9. 如果场景延续但没有换场，请用简短承接语，不要每页都完整重写背景。\n"
+        f"风格：{style}；年龄段：{age}；主角偏好：{hero or '无'}；附加要求：{merged_extra_prompt}。\n"
         f"固定标题：{title}\n"
         f"固定作者：{author}\n\n"
         f"页面信息：\n{_build_outline(pages)}\n"
@@ -373,7 +458,9 @@ async def _generate_with_qwen(
     content = (completion.choices[0].message.content or "").strip()
     if not content:
         raise ValueError("模型未返回故事内容")
-    return _ensure_header(_sanitize_story_output(content), title, author)
+    body = _sanitize_story_output(content)
+    body = _dedupe_background_repetition(body)
+    return _ensure_header(body, title, author)
 
 
 async def generate_story(
