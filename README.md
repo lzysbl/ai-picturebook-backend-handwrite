@@ -247,3 +247,28 @@ uvicorn app.main:app --reload --port 8002
 
 - `.env`、`uploads/`、`logs/`、`demo_book/`、`learning/` 已被忽略，不会提交到 Git。
 - 本项目目标是：可运行、可演示、可扩展，支持毕业设计展示与求职项目展示。
+
+---
+
+## 12. 部署
+
+项目已提供 Docker 部署文件：
+
+- `Dockerfile`
+- `docker-compose.yml`
+- `DEPLOY.md`
+
+推荐部署方式：
+
+```bash
+cp .env.example .env
+docker compose up -d --build
+```
+
+部署后访问：
+
+```text
+http://服务器公网IP:8001/ui/login
+```
+
+详细部署说明见 [`DEPLOY.md`](./DEPLOY.md)。
