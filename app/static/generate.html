@@ -43,6 +43,26 @@
           </div>
 
           <div class="field">
+            <span class="field-label">生成方案</span>
+            <div class="mode-switch" role="radiogroup" aria-label="生成方案">
+              <label class="mode-option">
+                <input type="radio" name="generation-mode" value="whole_book" checked />
+                <span>
+                  <strong>整本理解生成</strong>
+                  <small>一次提交全部图片，角色和标题更一致</small>
+                </span>
+              </label>
+              <label class="mode-option">
+                <input type="radio" name="generation-mode" value="pipeline" />
+                <span>
+                  <strong>逐页识别生成</strong>
+                  <small>先逐页分析，再整合生成，速度更可控</small>
+                </span>
+              </label>
+            </div>
+          </div>
+
+          <div class="field">
             <label class="field-label" for="prompt">额外提示词（可选）</label>
             <textarea id="prompt" class="textarea" placeholder="例如：语气更温柔，突出家庭主题"></textarea>
           </div>

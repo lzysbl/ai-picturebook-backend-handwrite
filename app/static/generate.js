@@ -93,6 +93,7 @@ window.addEventListener("DOMContentLoaded", async () => {
   const output = document.getElementById("generated-story");
   if (!form || !bookSelect || !promptInput || !output) return;
 
+  const generationModeInputs = Array.from(document.querySelectorAll('input[name="generation-mode"]'));
   const includeJudgeCheckbox = document.getElementById("include-judge");
   const judgeSamplesSelect = document.getElementById("judge-samples");
   const qualityPanel = document.getElementById("quality-panel");
@@ -109,6 +110,11 @@ window.addEventListener("DOMContentLoaded", async () => {
   const coverText = document.getElementById("book-cover-preview-text");
 
   let booksCache = [];
+
+  function getGenerationMode() {
+    const checked = generationModeInputs.find((item) => item.checked);
+    return checked?.value || "whole_book";
+  }
 
   if (includeJudgeCheckbox && judgeSamplesSelect) {
     includeJudgeCheckbox.addEventListener("change", () => {
@@ -228,6 +234,7 @@ window.addEventListener("DOMContentLoaded", async () => {
           prompt: prompt || null,
           audience_age: audienceAge,
           story_length: "long",
+          generation_mode: getGenerationMode(),
           include_judge: includeJudge,
           judge_samples: judgeSamples,
         }),
