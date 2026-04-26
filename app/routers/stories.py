@@ -17,7 +17,7 @@ from app.services.ai_service import analyze_images
 from app.services.book_service import get_book_by_id_and_user
 from app.services.eval_service import evaluate_story_full
 from app.services.image_service import list_book_images
-from app.services.story_generation_service import generate_story
+from app.services.story_generation_service import generate_story, generate_story_from_images
 from app.services.story_quality_cache_service import clear_story_quality_cache, get_story_quality_cache, set_story_quality_cache
 from app.services.story_service import (
     create_story_record,
@@ -45,6 +45,63 @@ def _normalize_judge_samples(include_judge: bool, judge_samples: int | None) -> 
     return max(1, min(sample, 5))
 
 
+def _use_whole_book_mode(payload: StoryGenerateRequest) -> bool:
+    """Return whether the request should use the whole-book multimodal flow."""
+    mode = (payload.generation_mode or "whole_book").strip().lower()
+    return mode in {"whole_book", "whole-book", "all_images", "all-images"}
+
+
+async def _generate_with_pipeline(
+    payload: StoryGenerateRequest,
+    image_paths: list[str],
+    book_title: str | None,
+    progress_callback=None,
+) -> tuple[list[dict], str]:
+    """Old stable flow: analyze page images first, then generate story from page analysis."""
+    analysis_result = await analyze_images(image_paths, progress_callback=progress_callback)
+    story_content = await generate_story(
+        analysis_result=analysis_result,
+        extra_prompt=payload.prompt,
+        narration_style=payload.narration_style,
+        audience_age=payload.audience_age,
+        story_length=payload.story_length,
+        character_name=payload.character_name,
+        fallback_title=book_title,
+    )
+    return analysis_result, story_content
+
+
+async def _generate_with_selected_mode(
+    payload: StoryGenerateRequest,
+    image_paths: list[str],
+    book_title: str | None,
+    progress_callback=None,
+) -> tuple[list[dict], str]:
+    """Prefer whole-book generation, and fall back to the old pipeline if it fails."""
+    if _use_whole_book_mode(payload):
+        try:
+            return await generate_story_from_images(
+                image_paths=image_paths,
+                extra_prompt=payload.prompt,
+                narration_style=payload.narration_style,
+                audience_age=payload.audience_age,
+                story_length=payload.story_length,
+                character_name=payload.character_name,
+                fallback_title=book_title,
+            )
+        except Exception:
+            # Whole-book multimodal calls may fail because of image count, model config, or API limits.
+            # Falling back keeps the product usable instead of blocking the user.
+            pass
+
+    return await _generate_with_pipeline(
+        payload=payload,
+        image_paths=image_paths,
+        book_title=book_title,
+        progress_callback=progress_callback,
+    )
+
+
 async def _run_generate_task(
     task_id: str,
     user_id: int,
@@ -69,22 +126,21 @@ async def _run_generate_task(
         await update_story_task(
             task_id,
             status="running",
-            progress=5,
-            current_step=f"第一阶段，正在识别图片（0/{total}）",
+            progress=8,
+            current_step=(
+                f"第一阶段，正在整本理解绘本（共{total}页）"
+                if _use_whole_book_mode(payload)
+                else f"第一阶段，正在识别图片（0/{total}）"
+            ),
         )
-        analysis_result = await analyze_images(image_paths, progress_callback=on_batch_progress)
-
-        await update_story_task(task_id, progress=75, current_step="第二阶段，正在生成故事")
-        story_content = await generate_story(
-            analysis_result=analysis_result,
-            extra_prompt=payload.prompt,
-            narration_style=payload.narration_style,
-            audience_age=payload.audience_age,
-            story_length=payload.story_length,
-            character_name=payload.character_name,
-            fallback_title=book_title,
+        analysis_result, story_content = await _generate_with_selected_mode(
+            payload=payload,
+            image_paths=image_paths,
+            book_title=book_title,
+            progress_callback=on_batch_progress,
         )
 
+        await update_story_task(task_id, progress=80, current_step="第二阶段，故事已生成，正在评估")
         await update_story_task(task_id, progress=85, current_step="第二阶段，正在评估故事质量")
         quality = await evaluate_story_full(
             analysis_result=analysis_result,
@@ -173,15 +229,10 @@ async def generate_story_api(
         raise HTTPException(status_code=400, detail="该绘本还没有上传图片")
 
     image_paths = [img.image_path for img in images]
-    analysis_result = await analyze_images(image_paths)
-    story_content = await generate_story(
-        analysis_result=analysis_result,
-        extra_prompt=payload.prompt,
-        narration_style=payload.narration_style,
-        audience_age=payload.audience_age,
-        story_length=payload.story_length,
-        character_name=payload.character_name,
-        fallback_title=book.title,
+    analysis_result, story_content = await _generate_with_selected_mode(
+        payload=payload,
+        image_paths=image_paths,
+        book_title=book.title,
     )
     quality = await evaluate_story_full(
         analysis_result=analysis_result,

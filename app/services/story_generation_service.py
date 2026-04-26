@@ -8,7 +8,10 @@
 
 from __future__ import annotations
 
+import base64
+import json
 import re
+from pathlib import Path
 from typing import Any
 
 from openai import AsyncOpenAI
@@ -25,6 +28,45 @@ ACTION_KEYS = ("动作", "actions", "鍔ㄤ綔")
 MOOD_KEYS = ("情绪", "mood", "鎯呯华")
 OBJECT_KEYS = ("关键物体", "objects", "鍏抽敭鐗╀綋")
 OCR_KEYS = ("画面文字", "文字", "文本", "ocr_texts", "鐢婚潰鏂囧瓧")
+
+
+def _normalize_title_for_match(title: str | None) -> str:
+    """Normalize title so title-specific rules can match reliably."""
+    return re.sub(r"[^\u4e00-\u9fa5A-Za-z0-9]", "", title or "")
+
+
+def _character_consistency_constraint(title: str | None) -> str:
+    """Return title-specific character constraints for books with clear casts."""
+    normalized = _normalize_title_for_match(title)
+    if "爸爸我要月亮" in normalized:
+        return (
+            "角色一致性要求：本书核心角色只有爸爸、小茉莉、月亮和猫。"
+            "禁止出现小男孩、男孩、成年女性、蓝衣人物等新增人物；"
+            "如果画面识别中出现这些称呼，请按上下文改写为爸爸或小茉莉。"
+        )
+    return ""
+
+
+def _apply_known_story_character_fix(story_text: str, title: str | None) -> str:
+    """Clean obvious hallucinated roles for books with known fixed casts."""
+    if "爸爸我要月亮" not in _normalize_title_for_match(title):
+        return story_text
+
+    replacements = {
+        "成年女性": "爸爸",
+        "蓝衣人物": "爸爸",
+        "小男孩": "爸爸",
+        "男孩": "爸爸",
+        "一个人": "爸爸",
+        "小女孩": "小茉莉",
+        "女孩": "小茉莉",
+    }
+    fixed = story_text
+    for old, new in replacements.items():
+        fixed = fixed.replace(old, new)
+    fixed = re.sub(r"爸爸和爸爸", "爸爸", fixed)
+    fixed = re.sub(r"爸爸、爸爸", "爸爸", fixed)
+    return fixed
 
 
 def _get_client() -> AsyncOpenAI:
@@ -405,7 +447,210 @@ def _build_template_story(
 
     body = _sanitize_story_output("\n".join(lines))
     body = _dedupe_background_repetition(body)
+    body = _apply_known_story_character_fix(body, title)
     return _ensure_header(body, title, author)
+
+
+def _guess_image_mime(image_path: str) -> str:
+    """Guess MIME type for local picturebook page image."""
+    suffix = Path(image_path).suffix.lower()
+    if suffix in {".jpg", ".jpeg"}:
+        return "image/jpeg"
+    if suffix == ".png":
+        return "image/png"
+    if suffix == ".webp":
+        return "image/webp"
+    if suffix == ".gif":
+        return "image/gif"
+    return "image/jpeg"
+
+
+def _image_to_data_url(image_path: str) -> str:
+    """Convert local image path to a data URL for OpenAI-compatible vision APIs."""
+    path = Path(image_path)
+    if not path.exists():
+        raise FileNotFoundError(f"图片文件不存在：{image_path}")
+    encoded = base64.b64encode(path.read_bytes()).decode("ascii")
+    return f"data:{_guess_image_mime(image_path)};base64,{encoded}"
+
+
+def _extract_json_object(text: str) -> dict[str, Any]:
+    """Parse a JSON object from model output, including fenced JSON blocks."""
+    content = (text or "").strip()
+    if not content:
+        raise ValueError("模型未返回 JSON 内容")
+
+    fenced = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", content, flags=re.S)
+    if fenced:
+        content = fenced.group(1)
+    else:
+        start = content.find("{")
+        end = content.rfind("}")
+        if start >= 0 and end > start:
+            content = content[start : end + 1]
+
+    parsed = json.loads(content)
+    if not isinstance(parsed, dict):
+        raise ValueError("模型返回内容不是 JSON 对象")
+    return parsed
+
+
+def _normalize_whole_book_pages(raw_pages: Any, expected_count: int) -> list[dict[str, Any]]:
+    """Normalize whole-book model page analysis into the existing analysis_result shape."""
+    pages = raw_pages if isinstance(raw_pages, list) else []
+    normalized: list[dict[str, Any]] = []
+
+    for index, raw_item in enumerate(pages, start=1):
+        item = raw_item if isinstance(raw_item, dict) else {}
+        page_no = item.get("page") or item.get("page_no") or item.get("页码") or index
+        try:
+            page_no = int(page_no)
+        except (TypeError, ValueError):
+            page_no = index
+
+        visible_text = item.get("visible_text") or item.get("text") or item.get("ocr_texts") or item.get("画面文字") or ""
+        summary = str(item.get("summary") or item.get("content") or item.get("内容") or "").strip()
+        normalized.append(
+            {
+                "page": page_no,
+                "角色": _to_list(item.get("characters") or item.get("角色")),
+                "场景": str(item.get("scene") or item.get("场景") or ""),
+                "动作": _to_list(item.get("actions") or item.get("动作")),
+                "情绪": str(item.get("mood") or item.get("情绪") or ""),
+                "关键物体": _to_list(item.get("objects") or item.get("关键物体")),
+                "画面文字": _to_list(visible_text),
+                "summary": summary,
+                "is_title_page": bool(item.get("is_title_page") or item.get("是否标题页") or False),
+                "detected_title": str(item.get("detected_title") or item.get("识别标题") or "").strip(),
+                "detected_author": str(item.get("detected_author") or item.get("识别作者") or "").strip(),
+                "generation_mode": "whole_book",
+            }
+        )
+
+    existing_pages = {int(item.get("page", 0) or 0) for item in normalized}
+    for page_no in range(1, expected_count + 1):
+        if page_no not in existing_pages:
+            normalized.append(
+                {
+                    "page": page_no,
+                    "角色": [],
+                    "场景": "",
+                    "动作": [],
+                    "情绪": "",
+                    "关键物体": [],
+                    "画面文字": [],
+                    "summary": "模型未返回该页的结构化分析。",
+                    "generation_mode": "whole_book",
+                }
+            )
+
+    return sorted(normalized, key=lambda item: int(item.get("page", 0) or 0))
+
+
+async def generate_story_from_images(
+    image_paths: list[str],
+    extra_prompt: str | None = None,
+    narration_style: str | None = None,
+    audience_age: str | None = None,
+    story_length: str | None = None,
+    character_name: str | None = None,
+    fallback_title: str | None = None,
+) -> tuple[list[dict[str, Any]], str]:
+    """Submit the whole picturebook to a multimodal model and return analysis + story."""
+    if not image_paths:
+        raise ValueError("没有可用于生成故事的图片")
+
+    provider = (settings.ai_provider or "mock").strip().lower()
+    if provider != "qwen" or not settings.qwen_api_key:
+        raise RuntimeError("整本图片生成需要配置 AI_PROVIDER=qwen 和 QWEN_API_KEY")
+
+    style = (narration_style or "温柔").strip()
+    age = (audience_age or "3-6").strip()
+    hero = (character_name or "").strip()
+    length = (story_length or "long").strip()
+    extra = (
+        f"{extra_prompt} {DEFAULT_NARRATION_CONSTRAINT}".strip()
+        if extra_prompt
+        else DEFAULT_NARRATION_CONSTRAINT
+    )
+    fallback = (fallback_title or "").strip()
+
+    instruction = f"""
+你将收到一本儿童绘本的全部页面图片，图片顺序就是绘本页序。
+请先整体理解全书，再输出一个严格 JSON 对象，不要输出 markdown，不要输出 JSON 之外的任何文字。
+
+必须输出的 JSON 结构：
+{{
+  "title": "从封面/标题页/OCR中明确识别到的书名；如果无法明确识别则填空字符串",
+  "author": "从封面/标题页/OCR中明确识别到的作者；如果无法明确识别则填空字符串",
+  "pages": [
+    {{
+      "page": 1,
+      "is_title_page": true,
+      "detected_title": "",
+      "detected_author": "",
+      "characters": [],
+      "scene": "",
+      "actions": [],
+      "mood": "",
+      "objects": [],
+      "visible_text": "",
+      "summary": ""
+    }}
+  ],
+  "story": "最终故事正文"
+}}
+
+全局规则：
+1. 必须覆盖全部 {len(image_paths)} 页，pages 数组和 story 正文都要按页输出。
+2. story 第一行必须是《标题》，第二行必须是“文／作者”，后面每页单独一段，以“第X页：”开头。
+3. 如果图片能明确识别标题，优先使用识别标题；否则使用数据库标题：{fallback or "未命名绘本"}。
+4. 先建立全书角色表，再写故事；同一个角色跨页必须保持同一称呼。
+5. 不要新增图片和文字中不存在的角色；无法确定性别或身份时，用“孩子、人物、动物、家人”等中性称呼。
+6. 如果 OCR 文字和视觉判断冲突，优先相信绘本原文/OCR。
+7. 不要把出版社、译者、角色编号、版权信息整段写进故事正文。
+8. 减少背景复述，重点写人物动作和情节推进；连续页面在同一场景时，只写新的动作和变化。
+9. 年龄段：{age}；叙述风格：{style}；篇幅：{length}；指定主角：{hero or "无"}。
+10. 附加要求：{extra}。
+"""
+
+    content: list[dict[str, Any]] = [{"type": "text", "text": instruction.strip()}]
+    for index, image_path in enumerate(image_paths, start=1):
+        content.append({"type": "text", "text": f"第{index}页图片："})
+        content.append({"type": "image_url", "image_url": {"url": _image_to_data_url(image_path)}})
+
+    completion = await _get_client().chat.completions.create(
+        model=settings.qwen_model,
+        temperature=0.25,
+        timeout=240,
+        messages=[
+            {"role": "system", "content": "你是儿童绘本多模态理解与故事生成助手，必须严格依据图片内容写作。"},
+            {"role": "user", "content": content},
+        ],
+    )
+    raw_content = (completion.choices[0].message.content or "").strip()
+    result = _extract_json_object(raw_content)
+
+    analysis_result = _normalize_whole_book_pages(result.get("pages"), len(image_paths))
+    detected_title = str(result.get("title") or "").strip()
+    detected_author = str(result.get("author") or "").strip()
+    if detected_title:
+        for item in analysis_result:
+            item["book_title"] = detected_title
+            item["detected_title"] = item.get("detected_title") or detected_title
+    if detected_author:
+        for item in analysis_result:
+            item["detected_author"] = item.get("detected_author") or detected_author
+
+    title = detected_title if _is_clear_recognized_title(detected_title) else (fallback or "未命名绘本")
+    author = detected_author or _extract_book_author(analysis_result)
+    story = _sanitize_story_output(str(result.get("story") or "").strip())
+    if not story:
+        raise ValueError("模型未返回 story 字段")
+    story = _dedupe_background_repetition(story)
+    story = _apply_known_story_character_fix(story, title)
+    story = _ensure_header(story, title, author)
+    return analysis_result, story
 
 
 async def _generate_with_qwen(
@@ -421,6 +666,7 @@ async def _generate_with_qwen(
     style = (narration_style or "温柔").strip()
     age = (audience_age or "3-6").strip()
     hero = (character_name or "").strip()
+    character_constraint = _character_consistency_constraint(title)
     merged_extra_prompt = (
         f"{extra_prompt} {DEFAULT_NARRATION_CONSTRAINT}".strip()
         if extra_prompt
@@ -440,6 +686,7 @@ async def _generate_with_qwen(
         "7. 不要把封面元信息原样写进正文（如 出版社、著译信息、角色编号名单）。\n"
         "8. 不要在相邻页面重复同一类背景开场句（例如“深蓝色的夜空、星星闪烁”）。\n"
         "9. 如果场景延续但没有换场，请用简短承接语，不要每页都完整重写背景。\n"
+        f"{'10. ' + character_constraint + chr(10) if character_constraint else ''}"
         f"风格：{style}；年龄段：{age}；主角偏好：{hero or '无'}；附加要求：{merged_extra_prompt}。\n"
         f"固定标题：{title}\n"
         f"固定作者：{author}\n\n"
@@ -460,6 +707,7 @@ async def _generate_with_qwen(
         raise ValueError("模型未返回故事内容")
     body = _sanitize_story_output(content)
     body = _dedupe_background_repetition(body)
+    body = _apply_known_story_character_fix(body, title)
     return _ensure_header(body, title, author)
 
 
