@@ -1,4 +1,4 @@
-name: ai-picturebook
+version: "2.4"
 
 services:
   app:
