@@ -614,7 +614,7 @@ a {
 }
 
 .history-grid {
-  grid-template-columns: minmax(300px, 0.95fr) minmax(360px, 1.15fr) minmax(300px, 1fr);
+  grid-template-columns: minmax(260px, 0.78fr) minmax(360px, 1.08fr) minmax(430px, 1.38fr);
   height: calc(100vh - 210px);
 }
 
@@ -732,24 +732,25 @@ a {
 .book-image-large {
   display: block;
   width: 100%;
-  max-height: 44vh;
+  max-height: 56vh;
   object-fit: contain;
   border-radius: 10px;
   background: #f7f9fc;
 }
 
 .book-image-thumbs {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(86px, 1fr));
+  display: flex;
   gap: 8px;
-  flex: 1;
-  min-height: 120px;
-  overflow-y: auto;
-  overflow-x: hidden;
-  padding-right: 4px;
+  flex: 0 0 auto;
+  min-height: 112px;
+  max-height: 126px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 2px 4px 8px 2px;
 }
 
 .book-image-thumb {
+  flex: 0 0 94px;
   border: 1px solid var(--border);
   border-radius: 10px;
   background: rgba(255, 255, 255, 0.86);
