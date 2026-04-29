@@ -24,7 +24,7 @@ function renderBooks() {
     item.className = "item";
     item.innerHTML = `
       <div class="item-title">${book.title}</div>
-      <div class="item-sub">ID: ${book.id} | 创建时间: ${book.created_at}</div>
+      <div class="item-sub">创建时间：${book.created_at}</div>
     `;
     list.appendChild(item);
 
@@ -46,7 +46,7 @@ function renderStories(stories) {
     const item = document.createElement("div");
     item.className = "item";
     item.innerHTML = `
-      <div class="item-title">故事 #${story.id}（绘本 ${story.book_id}）</div>
+      <div class="item-title">故事 #${story.id}</div>
       <div class="item-sub">${story.story_content.slice(0, 110)}...</div>
     `;
     list.appendChild(item);

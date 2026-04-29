@@ -153,7 +153,7 @@ window.addEventListener("DOMContentLoaded", async () => {
   function renderStoryDetail(story) {
     currentStory = story;
     updateExportButtons();
-    meta.textContent = `故事 #${story.id} | 绘本 ${story.book_id} | 创建时间 ${story.created_at}`;
+    meta.textContent = `故事 #${story.id} | ${getBookTitle(story.book_id)} | 创建时间 ${story.created_at}`;
     detail.textContent = story.story_content || "";
   }
 
@@ -479,7 +479,7 @@ window.addEventListener("DOMContentLoaded", async () => {
       item.className = "item";
       item.innerHTML = `
         <div class="item-title-row">
-          <div class="item-title">故事 #${story.id}（绘本 ${story.book_id}）</div>
+          <div class="item-title">故事 #${story.id}（${getBookTitle(story.book_id)}）</div>
           <span class="item-score-badge" data-overall-score="${story.id}">
             ${score?.overall != null ? `总分 ${score.overall}` : "总分 --"}
           </span>

@@ -89,7 +89,6 @@ window.addEventListener("DOMContentLoaded", async () => {
         ${coverHtml}
         <div class="book-detail-meta">
           <div class="item-title">${book.title}</div>
-          <div class="item-sub">绘本 ID：${book.id}</div>
           <div class="item-sub">创建时间：${book.created_at}</div>
           <div class="item-sub">图片数量：${images.length} 张</div>
           <div class="item-actions book-detail-actions">
@@ -162,7 +161,7 @@ window.addEventListener("DOMContentLoaded", async () => {
           ${coverHtml}
           <div class="book-meta">
             <div class="item-title">${book.title}</div>
-            <div class="item-sub">ID: ${book.id} | 创建时间: ${book.created_at}</div>
+            <div class="item-sub">创建时间：${book.created_at}</div>
           </div>
         </div>
         <div class="item-actions">
