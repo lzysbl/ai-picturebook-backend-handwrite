@@ -768,14 +768,16 @@ a {
   flex-wrap: wrap;
 }
 
-.quality-score-grid {
+.quality-score-grid,
+.quality-checks {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 6px;
   margin-bottom: 8px;
 }
 
-.q-score-card {
+.q-score-card,
+.check-card {
   border: 1px solid var(--border);
   border-radius: 10px;
   background: rgba(255, 255, 255, 0.9);
@@ -785,6 +787,57 @@ a {
 .q-score-label {
   color: var(--text-muted);
   font-size: 12px;
+}
+
+.check-label {
+  display: block;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.check-card strong {
+  display: block;
+  margin-top: 4px;
+  color: var(--text);
+  font-size: 18px;
+  line-height: 1.1;
+}
+
+.check-card small {
+  display: block;
+  margin-top: 4px;
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.quality-llm-scores {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.llm-score-card {
+  border: 1px solid #a9c7f7;
+  border-radius: 10px;
+  background: linear-gradient(180deg, #eef6ff, #ffffff);
+  padding: 8px;
+  text-align: center;
+}
+
+.llm-score-card span {
+  display: block;
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.llm-score-card strong {
+  display: block;
+  margin-top: 4px;
+  color: #19457e;
+  font-size: 20px;
+  line-height: 1;
 }
 
 .q-score-value {
@@ -908,6 +961,11 @@ a {
   }
 
   .quality-score-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .quality-checks,
+  .quality-llm-scores {
     grid-template-columns: 1fr;
   }
 

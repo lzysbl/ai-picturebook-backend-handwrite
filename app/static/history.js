@@ -21,15 +21,10 @@ window.addEventListener("DOMContentLoaded", async () => {
   const judgeSamplesSelect = document.getElementById("history-judge-samples");
   const refreshQualityBtn = document.getElementById("refresh-quality");
   const qualitySummary = document.getElementById("quality-summary");
+  const qualityChecks = document.getElementById("quality-checks");
+  const qualityLlmScores = document.getElementById("quality-llm-scores");
   const qualityMetrics = document.getElementById("quality-metrics");
   const qualityJudge = document.getElementById("quality-judge");
-
-  const qOverall = document.getElementById("q-overall");
-  const qCoherence = document.getElementById("q-coherence");
-  const qAge = document.getElementById("q-age");
-  const scoreCardOverall = document.getElementById("score-card-overall");
-  const scoreCardCoherence = document.getElementById("score-card-coherence");
-  const scoreCardAge = document.getElementById("score-card-age");
 
   let storiesCache = [];
   let booksCache = [];
@@ -115,15 +110,6 @@ window.addEventListener("DOMContentLoaded", async () => {
   function updateModeUI() {
     if (!judgeSamplesSelect) return;
     judgeSamplesSelect.disabled = !isDeepMode();
-  }
-
-  function setScoreCardVisual(node, score) {
-    if (!node) return;
-    node.classList.remove("score-low", "score-mid", "score-high");
-    if (typeof score !== "number") return;
-    if (score >= 80) node.classList.add("score-high");
-    else if (score >= 60) node.classList.add("score-mid");
-    else node.classList.add("score-low");
   }
 
   function normalizeScoreFromQuality(quality) {
@@ -223,15 +209,18 @@ window.addEventListener("DOMContentLoaded", async () => {
   }
 
   function renderQualityEmpty(message = "暂无评分结果。") {
-    if (qOverall) qOverall.textContent = "--";
-    if (qCoherence) qCoherence.textContent = "--";
-    if (qAge) qAge.textContent = "--";
-    setScoreCardVisual(scoreCardOverall, null);
-    setScoreCardVisual(scoreCardCoherence, null);
-    setScoreCardVisual(scoreCardAge, null);
+    if (qualityChecks) qualityChecks.innerHTML = "";
+    if (qualityLlmScores) {
+      qualityLlmScores.innerHTML = "";
+      qualityLlmScores.classList.add("hidden");
+    }
     if (qualityMetrics) qualityMetrics.innerHTML = "";
     if (qualityJudge) qualityJudge.textContent = "LLM评估：未启用";
     if (qualitySummary) qualitySummary.textContent = message;
+  }
+
+  function metricValue(value, fallback = "--") {
+    return value === null || value === undefined || value === "" ? fallback : value;
   }
 
   function renderQuality(quality) {
@@ -240,39 +229,68 @@ window.addEventListener("DOMContentLoaded", async () => {
       return;
     }
 
-    const autoScores = quality?.automatic?.scores || {};
+    const evidence = quality?.automatic?.evidence || {};
     const metrics = quality?.metrics || {};
     const judge = quality?.judge || {};
 
-    const overall = autoScores.overall;
-    const coherence = autoScores.coherence;
-    const age = autoScores.age_appropriateness;
-    if (qOverall) qOverall.textContent = typeof overall === "number" ? String(overall) : "--";
-    if (qCoherence) qCoherence.textContent = typeof coherence === "number" ? String(coherence) : "--";
-    if (qAge) qAge.textContent = typeof age === "number" ? String(age) : "--";
-    setScoreCardVisual(scoreCardOverall, overall);
-    setScoreCardVisual(scoreCardCoherence, coherence);
-    setScoreCardVisual(scoreCardAge, age);
-
-    const repeat = metrics.repeat_3gram_ratio ?? "--";
-    const distinct2 = metrics.distinct_2 ?? "--";
-    const hallCount = metrics.hallucination_count ?? "--";
+    const pageCount = evidence.page_count ?? "--";
+    const expectedPages = Array.isArray(evidence.expected_pages) ? evidence.expected_pages.length : "--";
+    const missingPages = Array.isArray(evidence.missing_pages) ? evidence.missing_pages : [];
+    const hallCount = metrics.hallucination_count ?? 0;
     const hallList = Array.isArray(metrics.hallucinated_entities) ? metrics.hallucinated_entities : [];
-    const hallText = hallList.length > 0 ? `幻觉角色：${hallList.join("、")}` : "幻觉角色：无";
+    const repeat = metricValue(metrics.repeat_3gram_ratio);
+    const distinct2 = metricValue(metrics.distinct_2);
+
+    if (qualityChecks) {
+      const pageStatus = missingPages.length === 0 ? "通过" : `缺少 ${missingPages.join("、")}`;
+      const hallStatus = Number(hallCount) === 0 ? "通过" : `${hallCount} 个`;
+      qualityChecks.innerHTML = `
+        <div class="check-card">
+          <span class="check-label">页码完整</span>
+          <strong>${pageStatus}</strong>
+          <small>${pageCount}/${expectedPages} 页</small>
+        </div>
+        <div class="check-card">
+          <span class="check-label">疑似幻觉</span>
+          <strong>${hallStatus}</strong>
+          <small>${hallList.length ? hallList.join("、") : "未发现明显新增角色"}</small>
+        </div>
+        <div class="check-card">
+          <span class="check-label">文本重复率</span>
+          <strong>${repeat}</strong>
+          <small>distinct-2 ${distinct2}</small>
+        </div>
+      `;
+    }
 
     if (qualityMetrics) {
       qualityMetrics.innerHTML = `
+        <span class="metric-chip">基础检查：${missingPages.length === 0 && Number(hallCount) === 0 ? "通过" : "需复核"}</span>
+        <span class="metric-chip">页码 ${pageCount}/${expectedPages}</span>
         <span class="metric-chip">重复率 ${repeat}</span>
-        <span class="metric-chip">distinct-2 ${distinct2}</span>
-        <span class="metric-chip">疑似幻觉 ${hallCount}</span>
-        <span class="metric-chip metric-chip-wide">${hallText}</span>
       `;
+    }
+
+    if (qualityLlmScores) {
+      if (judge.enabled && judge.average_scores) {
+        const avg = judge.average_scores;
+        qualityLlmScores.classList.remove("hidden");
+        qualityLlmScores.innerHTML = `
+          <div class="llm-score-card"><span>图文贴合</span><strong>${avg.grounding ?? "-"}</strong></div>
+          <div class="llm-score-card"><span>情节连贯</span><strong>${avg.coherence ?? "-"}</strong></div>
+          <div class="llm-score-card"><span>儿童可读</span><strong>${avg.readability ?? "-"}</strong></div>
+          <div class="llm-score-card"><span>年龄适配</span><strong>${avg.age_appropriateness ?? "-"}</strong></div>
+          <div class="llm-score-card"><span>趣味性</span><strong>${avg.interestingness ?? "-"}</strong></div>
+        `;
+      } else {
+        qualityLlmScores.innerHTML = "";
+        qualityLlmScores.classList.add("hidden");
+      }
     }
 
     if (qualityJudge) {
       if (judge.enabled && judge.average_scores) {
-        const avg = judge.average_scores;
-        qualityJudge.textContent = `LLM评估：贴合度 ${avg.grounding ?? "-"} | 连贯性 ${avg.coherence ?? "-"} | 可读性 ${avg.readability ?? "-"} | 年龄适配 ${avg.age_appropriateness ?? "-"} | 趣味性 ${avg.interestingness ?? "-"}`;
+        qualityJudge.textContent = `LLM深度评估：已完成，模型 ${judge.model || "-"}`;
       } else if (judge.enabled && judge.error) {
         qualityJudge.textContent = `LLM评估失败：${judge.error}`;
       } else {
@@ -281,7 +299,7 @@ window.addEventListener("DOMContentLoaded", async () => {
     }
 
     if (qualitySummary) {
-      qualitySummary.textContent = `已更新评分：总分 ${overall ?? "--"}，连贯性 ${coherence ?? "--"}，年龄适配 ${age ?? "--"}`;
+      qualitySummary.textContent = "基础检查用于发现缺页、重复和疑似幻觉；故事质量请优先参考 LLM 深度评估。";
     }
   }
 

@@ -69,21 +69,8 @@
             <button id="refresh-quality" class="btn btn-soft" type="button">刷新评分</button>
           </div>
 
-          <div class="quality-score-grid">
-            <div class="q-score-card" id="score-card-overall">
-              <div class="q-score-label">总分</div>
-              <div id="q-overall" class="q-score-value">--</div>
-            </div>
-            <div class="q-score-card" id="score-card-coherence">
-              <div class="q-score-label">连贯性</div>
-              <div id="q-coherence" class="q-score-value">--</div>
-            </div>
-            <div class="q-score-card" id="score-card-age">
-              <div class="q-score-label">年龄适配</div>
-              <div id="q-age" class="q-score-value">--</div>
-            </div>
-          </div>
-
+          <div id="quality-checks" class="quality-checks"></div>
+          <div id="quality-llm-scores" class="quality-llm-scores hidden"></div>
           <div id="quality-metrics" class="quality-metrics"></div>
           <div id="quality-judge" class="quality-judge">LLM评估：未启用</div>
           <div id="quality-summary" class="quality-summary">暂无评分结果。</div>
