@@ -15,6 +15,105 @@ window.addEventListener("DOMContentLoaded", async () => {
   const form = document.getElementById("book-form");
   const titleInput = document.getElementById("book-title");
   const list = document.getElementById("books-list");
+  const detailSection = document.getElementById("book-detail-section");
+  const detail = document.getElementById("book-detail");
+  const closeDetailBtn = document.getElementById("close-book-detail");
+
+  let booksCache = [];
+  const bookImagesCache = new Map();
+
+  async function loadBookImages(bookId) {
+    const key = String(bookId || "");
+    if (!key) return [];
+    if (bookImagesCache.has(key)) return bookImagesCache.get(key);
+
+    const images = await apiRequest(`/api/books/${bookId}/images`);
+    const sortedImages = Array.isArray(images)
+      ? [...images].sort((a, b) => Number(a.image_order || 0) - Number(b.image_order || 0))
+      : [];
+    bookImagesCache.set(key, sortedImages);
+    return sortedImages;
+  }
+
+  function openStoriesForBook(bookId) {
+    setSelectedBookId(bookId);
+    window.location.href = `/ui/history?book_id=${encodeURIComponent(bookId)}`;
+  }
+
+  function renderBookDetail(book, images) {
+    if (!detail || !detailSection) return;
+
+    const coverUrl = toPublicImageUrl(book.cover_image || images[0]?.image_path);
+    const coverHtml = coverUrl
+      ? `<img class="book-detail-cover" src="${coverUrl}" alt="${book.title}封面" loading="lazy" />`
+      : '<div class="book-detail-cover book-cover-empty">无封面</div>';
+
+    const imagesHtml = images.length
+      ? images
+          .map((image) => {
+            const imageUrl = toPublicImageUrl(image.image_path);
+            return `
+              <a class="book-detail-image" href="${imageUrl}" target="_blank" rel="noopener">
+                <img src="${imageUrl}" alt="第 ${image.image_order} 页" loading="lazy" />
+                <span>第 ${image.image_order} 页</span>
+              </a>
+            `;
+          })
+          .join("")
+      : '<div class="item-sub">该绘本还没有上传图片。</div>';
+
+    detail.innerHTML = `
+      <div class="book-detail-header">
+        ${coverHtml}
+        <div class="book-detail-meta">
+          <div class="item-title">${book.title}</div>
+          <div class="item-sub">绘本 ID：${book.id}</div>
+          <div class="item-sub">创建时间：${book.created_at}</div>
+          <div class="item-sub">图片数量：${images.length} 张</div>
+          <div class="item-actions book-detail-actions">
+            <a class="btn btn-soft" href="/ui/upload" data-action="upload">继续上传图片</a>
+            <a class="btn btn-soft" href="/ui/generate" data-action="generate">生成故事</a>
+            <button class="btn btn-primary" type="button" data-action="stories">查看绘本故事</button>
+          </div>
+        </div>
+      </div>
+      <div class="book-detail-images">
+        ${imagesHtml}
+      </div>
+    `;
+
+    detail.querySelector('[data-action="stories"]')?.addEventListener("click", () => openStoriesForBook(book.id));
+    detail.querySelector('[data-action="upload"]')?.addEventListener("click", () => setSelectedBookId(book.id));
+    detail.querySelector('[data-action="generate"]')?.addEventListener("click", () => setSelectedBookId(book.id));
+    detailSection.classList.remove("hidden");
+    detailSection.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+
+  async function showBookDetail(bookId, button) {
+    const book = booksCache.find((item) => String(item.id) === String(bookId));
+    if (!book) {
+      showToast("没有找到该绘本");
+      return;
+    }
+
+    const oldText = button?.textContent;
+    if (button) {
+      button.disabled = true;
+      button.textContent = "加载中...";
+    }
+
+    try {
+      const images = await loadBookImages(book.id);
+      renderBookDetail(book, images);
+    } catch (error) {
+      showToast(error.message || "绘本详情加载失败");
+    } finally {
+      if (button) {
+        button.disabled = false;
+        button.textContent = oldText;
+      }
+    }
+  }
 
   function renderBooks(books) {
     list.innerHTML = "";
@@ -39,15 +138,35 @@ window.addEventListener("DOMContentLoaded", async () => {
             <div class="item-sub">ID: ${book.id} | 创建时间: ${book.created_at}</div>
           </div>
         </div>
+        <div class="item-actions">
+          <button class="btn btn-soft" type="button" data-detail-id="${book.id}">查看绘本详情</button>
+          <button class="btn btn-primary" type="button" data-stories-id="${book.id}">查看绘本故事</button>
+        </div>
       `;
       list.appendChild(item);
+    });
+
+    list.querySelectorAll("[data-detail-id]").forEach((button) => {
+      button.addEventListener("click", async () => {
+        await showBookDetail(button.getAttribute("data-detail-id"), button);
+      });
+    });
+
+    list.querySelectorAll("[data-stories-id]").forEach((button) => {
+      button.addEventListener("click", () => {
+        openStoriesForBook(button.getAttribute("data-stories-id"));
+      });
     });
   }
 
   async function refreshBooks() {
-    const books = await loadBooks();
-    renderBooks(books);
+    booksCache = await loadBooks();
+    renderBooks(booksCache);
   }
+
+  closeDetailBtn?.addEventListener("click", () => {
+    detailSection?.classList.add("hidden");
+  });
 
   form.addEventListener("submit", async (event) => {
     event.preventDefault();

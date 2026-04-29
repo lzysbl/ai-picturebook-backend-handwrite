@@ -394,6 +394,12 @@ window.addEventListener("DOMContentLoaded", async () => {
       option.textContent = `${book.id} - ${book.title}`;
       filterSelect.appendChild(option);
     });
+
+    const queryBookId = new URLSearchParams(window.location.search).get("book_id");
+    if (queryBookId && booksCache.some((book) => String(book.id) === String(queryBookId))) {
+      filterSelect.value = String(queryBookId);
+      setSelectedBookId(queryBookId);
+    }
   }
 
   function getFilteredStories() {
@@ -528,7 +534,10 @@ window.addEventListener("DOMContentLoaded", async () => {
     renderStoriesByFilter();
   }
 
-  filterSelect.addEventListener("change", renderStoriesByFilter);
+  filterSelect.addEventListener("change", () => {
+    setSelectedBookId(filterSelect.value);
+    renderStoriesByFilter();
+  });
 
   if (qualityModeSelect) {
     qualityModeSelect.addEventListener("change", () => {
