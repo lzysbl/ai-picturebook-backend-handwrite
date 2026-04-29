@@ -710,6 +710,42 @@ a {
   flex-wrap: wrap;
 }
 
+.detail-tabs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-top: 12px;
+  padding: 5px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: rgba(240, 247, 255, 0.8);
+}
+
+.detail-tab {
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  font: inherit;
+  font-weight: 700;
+  padding: 9px 10px;
+}
+
+.detail-tab.active {
+  background: #fff;
+  color: #174a8e;
+  box-shadow: 0 8px 20px rgba(37, 84, 150, 0.12);
+}
+
+.detail-tab-panel {
+  display: none;
+}
+
+.detail-tab-panel.active {
+  display: block;
+}
+
 .book-images-panel {
   display: flex;
   flex: 1;

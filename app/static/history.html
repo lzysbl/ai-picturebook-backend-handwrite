@@ -53,7 +53,17 @@
         </div>
         <div id="story-meta" class="note">请先在左侧点击“查看详情”。</div>
 
-        <section class="quality-panel history-quality-panel">
+        <div class="detail-tabs" role="tablist" aria-label="故事详情与评分切换">
+          <button class="detail-tab active" type="button" data-detail-tab="story">故事详情</button>
+          <button class="detail-tab" type="button" data-detail-tab="quality">评分结果</button>
+        </div>
+
+        <section id="story-tab-panel" class="detail-tab-panel active">
+          <pre id="story-detail" class="story-output"></pre>
+        </section>
+
+        <section id="quality-tab-panel" class="detail-tab-panel">
+          <div class="quality-panel history-quality-panel">
           <div class="quality-toolbar">
             <div class="quality-toolbar-left">
               <select id="history-quality-mode" class="select toolbar-select">
@@ -74,9 +84,8 @@
           <div id="quality-metrics" class="quality-metrics"></div>
           <div id="quality-judge" class="quality-judge">LLM评估：未启用</div>
           <div id="quality-summary" class="quality-summary">暂无评分结果。</div>
+          </div>
         </section>
-
-        <pre id="story-detail" class="story-output"></pre>
       </section>
 
       <section class="card panel history-panel history-panel-images">

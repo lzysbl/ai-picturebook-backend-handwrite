@@ -9,6 +9,9 @@ window.addEventListener("DOMContentLoaded", async () => {
   const filterSelect = document.getElementById("history-book-filter");
   const detail = document.getElementById("story-detail");
   const meta = document.getElementById("story-meta");
+  const detailTabs = document.querySelectorAll("[data-detail-tab]");
+  const storyTabPanel = document.getElementById("story-tab-panel");
+  const qualityTabPanel = document.getElementById("quality-tab-panel");
   const exportTxtBtn = document.getElementById("export-story-txt");
   const exportMdBtn = document.getElementById("export-story-md");
   const imageCount = document.getElementById("book-images-count");
@@ -83,6 +86,15 @@ window.addEventListener("DOMContentLoaded", async () => {
     const disabled = !currentStory;
     if (exportTxtBtn) exportTxtBtn.disabled = disabled;
     if (exportMdBtn) exportMdBtn.disabled = disabled;
+  }
+
+  function switchDetailTab(tabName) {
+    const isQuality = tabName === "quality";
+    detailTabs.forEach((tab) => {
+      tab.classList.toggle("active", tab.dataset.detailTab === tabName);
+    });
+    storyTabPanel?.classList.toggle("active", !isQuality);
+    qualityTabPanel?.classList.toggle("active", isQuality);
   }
 
   function isDeepMode() {
@@ -537,6 +549,12 @@ window.addEventListener("DOMContentLoaded", async () => {
   filterSelect.addEventListener("change", () => {
     setSelectedBookId(filterSelect.value);
     renderStoriesByFilter();
+  });
+
+  detailTabs.forEach((tab) => {
+    tab.addEventListener("click", () => {
+      switchDetailTab(tab.dataset.detailTab || "story");
+    });
   });
 
   if (qualityModeSelect) {
