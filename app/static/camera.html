@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <title>实时识别 - AI 绘本故事生成系统</title>
+  <link rel="stylesheet" href="/static/styles.css" />
+</head>
+<body>
+  <div class="page-wrap">
+    <header class="topbar">
+      <div class="brand">
+        <div class="brand-badge"></div>
+        <div>
+          <h1 class="brand-title">实时识别</h1>
+          <p class="brand-sub">使用手机摄像头拍摄绘本页面，实时生成讲述文本</p>
+        </div>
+      </div>
+      <div class="link-row">
+        <span id="user-label" class="note">未登录</span>
+        <button id="logout-btn" class="btn btn-soft" type="button">退出登录</button>
+      </div>
+    </header>
+
+    <nav class="workspace-nav card">
+      <a data-nav="books" href="/ui/books">绘本管理</a>
+      <a data-nav="upload" href="/ui/upload">图片上传</a>
+      <a data-nav="generate" href="/ui/generate">故事生成</a>
+      <a data-nav="camera" href="/ui/camera">实时识别</a>
+      <a data-nav="history" href="/ui/history">故事历史</a>
+    </nav>
+
+    <main class="camera-layout">
+      <section class="card panel">
+        <div class="camera-header-row">
+          <h2>摄像头取景</h2>
+          <div class="camera-actions">
+            <button id="start-camera" class="btn btn-primary" type="button">启动摄像头</button>
+            <button id="capture-frame" class="btn btn-soft" type="button" disabled>识别当前页</button>
+          </div>
+        </div>
+
+        <div class="camera-stage">
+          <video id="camera-video" class="camera-video" playsinline muted autoplay></video>
+          <div id="camera-empty" class="camera-empty">请允许浏览器访问摄像头后开始识别</div>
+          <div id="camera-page-box" class="camera-page-box hidden">
+            <span id="camera-page-box-label" class="camera-page-box-label">页面检测中</span>
+          </div>
+        </div>
+
+        <canvas id="camera-canvas" class="hidden"></canvas>
+
+        <div class="camera-toolbar">
+          <label class="field">
+            <span class="field-label">讲述风格</span>
+            <select id="camera-style" class="select">
+              <option value="温柔" selected>温柔</option>
+              <option value="活泼">活泼</option>
+              <option value="讲解">讲解</option>
+            </select>
+          </label>
+          <label class="field">
+            <span class="field-label">目标年龄</span>
+            <select id="camera-age" class="select">
+              <option value="3-6" selected>3-6 岁</option>
+              <option value="6-8">6-8 岁</option>
+              <option value="8-10">8-10 岁</option>
+            </select>
+          </label>
+          <label class="field">
+            <span class="field-label">响应模式</span>
+            <select id="camera-mode" class="select">
+              <option value="fast" selected>快速响应</option>
+              <option value="full">完整生成</option>
+            </select>
+          </label>
+          <label class="field">
+            <span class="field-label">自动扫描</span>
+            <select id="camera-auto-scan" class="select">
+              <option value="off" selected>关闭</option>
+              <option value="on">开启</option>
+            </select>
+          </label>
+          <label class="field">
+            <span class="field-label">扫描间隔</span>
+            <select id="camera-interval" class="select">
+              <option value="1500">1.5 秒</option>
+              <option value="2000" selected>2 秒</option>
+              <option value="3000">3 秒</option>
+            </select>
+          </label>
+          <label class="field camera-prompt-field">
+            <span class="field-label">额外提示</span>
+            <input id="camera-prompt" class="input" type="text" placeholder="例如：突出角色动作" />
+          </label>
+        </div>
+
+        <div class="camera-metrics">
+          <span id="camera-page-state" class="metric-chip">页面状态：待检测</span>
+          <span id="camera-stability-state" class="metric-chip">稳定帧：0 / 2</span>
+          <span id="camera-signature-state" class="metric-chip">重复检测：未命中</span>
+          <span id="camera-context-state" class="metric-chip">连续讲述：0 页</span>
+          <span id="camera-crop-state" class="metric-chip">裁剪模式：整图</span>
+        </div>
+
+        <p id="camera-status" class="note">默认采用“快速响应”模式：优先返回当前页讲述，再兼顾识别速度。</p>
+      </section>
+
+      <section class="card panel camera-result-panel">
+        <h2>识别结果</h2>
+        <div id="camera-result-meta" class="note">还没有识别结果。</div>
+        <pre id="camera-story-output" class="story-output">点击“启动摄像头”后，对准绘本页面并选择“识别当前页”。</pre>
+        <div id="camera-quality-panel" class="quality-panel hidden">
+          <h3>本次评估结果</h3>
+          <div id="camera-quality-summary" class="quality-summary"></div>
+          <pre id="camera-analysis-output" class="quality-detail"></pre>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <div id="toast" class="toast"></div>
+  <script src="/static/ui-common.js"></script>
+  <script src="/static/workspace-common.js"></script>
+  <script src="/static/camera.js"></script>
+</body>
+</html>

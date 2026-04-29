@@ -1,0 +1,371 @@
+window.addEventListener("DOMContentLoaded", async () => {
+  if (!initTopbar("camera")) return;
+
+  const startBtn = document.getElementById("start-camera");
+  const captureBtn = document.getElementById("capture-frame");
+  const video = document.getElementById("camera-video");
+  const canvas = document.getElementById("camera-canvas");
+  const emptyHint = document.getElementById("camera-empty");
+  const pageBox = document.getElementById("camera-page-box");
+  const pageBoxLabel = document.getElementById("camera-page-box-label");
+  const statusNode = document.getElementById("camera-status");
+  const styleSelect = document.getElementById("camera-style");
+  const ageSelect = document.getElementById("camera-age");
+  const modeSelect = document.getElementById("camera-mode");
+  const autoScanSelect = document.getElementById("camera-auto-scan");
+  const intervalSelect = document.getElementById("camera-interval");
+  const promptInput = document.getElementById("camera-prompt");
+  const pageStateNode = document.getElementById("camera-page-state");
+  const stabilityStateNode = document.getElementById("camera-stability-state");
+  const signatureStateNode = document.getElementById("camera-signature-state");
+  const contextStateNode = document.getElementById("camera-context-state");
+  const cropStateNode = document.getElementById("camera-crop-state");
+  const resultMeta = document.getElementById("camera-result-meta");
+  const storyOutput = document.getElementById("camera-story-output");
+  const qualityPanel = document.getElementById("camera-quality-panel");
+  const qualitySummary = document.getElementById("camera-quality-summary");
+  const analysisOutput = document.getElementById("camera-analysis-output");
+
+  let stream = null;
+  let isScanning = false;
+  let lastCaptureAt = 0;
+  let autoScanTimer = null;
+  let lastFrameSignature = "";
+  let lastScannedSignature = "";
+  let stableFrameCount = 0;
+  let scanSessionId = globalThis.crypto?.randomUUID?.() || `scan-${Date.now()}`;
+  let currentGuideBox = null;
+
+  const STABLE_FRAMES_REQUIRED = 2;
+  const SIGNATURE_DIFF_THRESHOLD = 18;
+
+  async function ensureAuth() {
+    try {
+      await apiRequest("/api/users/me");
+    } catch (error) {
+      clearAuth();
+      showToast("登录状态失效，请重新登录");
+      setTimeout(() => (window.location.href = "/ui/login"), 800);
+      throw error;
+    }
+  }
+
+  function setStatus(text) {
+    if (statusNode) statusNode.textContent = text;
+  }
+
+  function updateStateBadges({ pageState, stabilityText, signatureText } = {}) {
+    if (pageStateNode && pageState) pageStateNode.textContent = pageState;
+    if (stabilityStateNode && stabilityText) stabilityStateNode.textContent = stabilityText;
+    if (signatureStateNode && signatureText) signatureStateNode.textContent = signatureText;
+  }
+
+  function updateContextBadge(context) {
+    if (!contextStateNode) return;
+    const count = Number(context?.recent_page_count || 0);
+    const roles = Array.isArray(context?.character_registry) ? context.character_registry : [];
+    contextStateNode.textContent = `连续讲述：${count} 页${roles.length ? ` | 角色 ${roles.slice(0, 3).join("、")}` : ""}`;
+  }
+
+  function updateCropBadge(cropMode) {
+    if (!cropStateNode) return;
+    const textMap = {
+      frontend_crop: "前端框裁剪",
+      model_crop: "后端检测裁剪",
+      guide_crop: "引导框裁剪",
+      full_frame: "整图",
+      cropped: "页面裁剪",
+    };
+    cropStateNode.textContent = `裁剪模式：${textMap[cropMode] || "整图"}`;
+  }
+
+  function buildGuidePageBox() {
+    const videoAspect = (video.videoWidth || 3) / Math.max(1, video.videoHeight || 4);
+    const targetAspect = Math.min(1.02, Math.max(0.68, videoAspect * 0.78));
+    const guideHeight = 0.84;
+    const guideWidth = Math.min(0.82, guideHeight * targetAspect);
+    return {
+      x: (1 - guideWidth) / 2,
+      y: (1 - guideHeight) / 2,
+      width: guideWidth,
+      height: guideHeight,
+      source: "guide",
+    };
+  }
+
+  function setPageBox(box, label, kind = "guide") {
+    if (!pageBox || !pageBoxLabel) return;
+    const safeBox = box || currentGuideBox || buildGuidePageBox();
+    pageBox.classList.remove("hidden");
+    pageBox.style.left = `${safeBox.x * 100}%`;
+    pageBox.style.top = `${safeBox.y * 100}%`;
+    pageBox.style.width = `${safeBox.width * 100}%`;
+    pageBox.style.height = `${safeBox.height * 100}%`;
+    pageBox.dataset.kind = kind;
+    pageBoxLabel.textContent = label;
+  }
+
+  function renderScanResult(result) {
+    const analysisResult = Array.isArray(result?.analysis_result) ? result.analysis_result : [];
+    const first = analysisResult[0] || {};
+    const quality = result?.quality || null;
+    updateContextBadge(result?.context || null);
+    updateCropBadge(result?.crop_mode);
+
+    const cropBox = result?.crop_box && typeof result.crop_box === "object" ? result.crop_box : null;
+    const cropMode = result?.crop_mode || "full_frame";
+    if (cropMode === "model_crop" && cropBox) {
+      setPageBox(cropBox, "后端检测到页面", "detected");
+    } else {
+      setPageBox(currentGuideBox, "请将绘本页放入引导框", "guide");
+    }
+
+    storyOutput.textContent = result?.story_content || "未返回讲述文本";
+    resultMeta.textContent = `识别完成：角色 ${Array.isArray(first["角色"]) ? first["角色"].join("、") || "未识别" : "未识别"} | 场景 ${first["场景"] || "未识别"}`;
+
+    if (quality) {
+      qualityPanel.classList.remove("hidden");
+      const paper = quality.paper_metrics || {};
+      const modeText = result?.response_mode === "full" ? "完整生成" : "快速响应";
+      const cropText = cropMode === "model_crop" ? "后端检测页框" : cropMode === "guide_crop" ? "引导框裁剪" : cropMode === "frontend_crop" ? "前端框裁剪" : "整图回退";
+      qualitySummary.textContent =
+        `${modeText} | ${cropText} | 整体 ${paper.overall ?? "-"} | 连贯 ${paper.coherence ?? "-"} | 适龄 ${paper.age_appropriateness ?? "-"} | 页面覆盖率 ${paper.page_coverage_ratio ?? "-"}`;
+      analysisOutput.textContent = JSON.stringify(analysisResult, null, 2);
+    } else {
+      qualityPanel.classList.add("hidden");
+      qualitySummary.textContent = "";
+      analysisOutput.textContent = "";
+    }
+  }
+
+  async function startCamera() {
+    if (stream) return;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({
+        video: {
+          facingMode: { ideal: "environment" },
+          width: { ideal: 1280 },
+          height: { ideal: 720 },
+        },
+        audio: false,
+      });
+      video.srcObject = stream;
+      emptyHint?.classList.add("hidden");
+      captureBtn.disabled = false;
+      currentGuideBox = buildGuidePageBox();
+      setPageBox(currentGuideBox, "请将绘本页放入引导框", "guide");
+      setStatus("摄像头已启动，请尽量让绘本页贴近引导框。");
+      updateStateBadges({
+        pageState: "页面状态：引导框模式",
+        stabilityText: `稳定帧：${stableFrameCount} / ${STABLE_FRAMES_REQUIRED}`,
+        signatureText: "重复检测：未命中",
+      });
+      updateCropBadge("guide_crop");
+      restartAutoScanIfNeeded();
+    } catch (error) {
+      showToast("摄像头启动失败，请检查浏览器权限");
+      setStatus(`摄像头启动失败：${error.message || "未知错误"}`);
+    }
+  }
+
+  function captureFrameBlob() {
+    return new Promise((resolve, reject) => {
+      const width = video.videoWidth;
+      const height = video.videoHeight;
+      if (!width || !height) {
+        reject(new Error("摄像头画面尚未就绪"));
+        return;
+      }
+
+      const maxWidth = 960;
+      const scale = Math.min(1, maxWidth / width);
+      canvas.width = Math.round(width * scale);
+      canvas.height = Math.round(height * scale);
+
+      const ctx = canvas.getContext("2d");
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+      canvas.toBlob(
+        (blob) => {
+          if (!blob) {
+            reject(new Error("图像压缩失败"));
+            return;
+          }
+          resolve(blob);
+        },
+        "image/jpeg",
+        0.78,
+      );
+    });
+  }
+
+  function captureFrameSignature() {
+    const width = video.videoWidth;
+    const height = video.videoHeight;
+    if (!width || !height) return "";
+
+    const sampleSize = 12;
+    canvas.width = sampleSize;
+    canvas.height = sampleSize;
+    const ctx = canvas.getContext("2d", { willReadFrequently: true });
+    ctx.drawImage(video, 0, 0, sampleSize, sampleSize);
+    const { data } = ctx.getImageData(0, 0, sampleSize, sampleSize);
+
+    const values = [];
+    for (let i = 0; i < data.length; i += 4) {
+      const gray = Math.round((data[i] + data[i + 1] + data[i + 2]) / 3);
+      values.push(gray);
+    }
+    const avg = values.reduce((sum, value) => sum + value, 0) / values.length;
+    return values.map((value) => (value >= avg ? "1" : "0")).join("");
+  }
+
+  function signatureDiff(a, b) {
+    if (!a || !b || a.length !== b.length) return Number.MAX_SAFE_INTEGER;
+    let diff = 0;
+    for (let i = 0; i < a.length; i += 1) {
+      if (a[i] !== b[i]) diff += 1;
+    }
+    return diff;
+  }
+
+  function stopAutoScan() {
+    if (autoScanTimer) {
+      clearInterval(autoScanTimer);
+      autoScanTimer = null;
+    }
+  }
+
+  function restartAutoScanIfNeeded() {
+    stopAutoScan();
+    if (!stream || autoScanSelect?.value !== "on") return;
+    const intervalMs = Number(intervalSelect?.value || 2000);
+    autoScanTimer = setInterval(() => {
+      scanCurrentFrame({ automatic: true }).catch(() => {});
+    }, intervalMs);
+  }
+
+  function updateFrameStability(signature) {
+    if (!signature) return false;
+
+    if (!lastFrameSignature) {
+      lastFrameSignature = signature;
+      stableFrameCount = 1;
+      updateStateBadges({
+        pageState: "页面状态：引导框模式",
+        stabilityText: `稳定帧：${stableFrameCount} / ${STABLE_FRAMES_REQUIRED}`,
+        signatureText: "重复检测：未命中",
+      });
+      return false;
+    }
+
+    const diff = signatureDiff(signature, lastFrameSignature);
+    if (diff <= SIGNATURE_DIFF_THRESHOLD) {
+      stableFrameCount += 1;
+    } else {
+      stableFrameCount = 1;
+      lastFrameSignature = signature;
+    }
+
+    updateStateBadges({
+      pageState: "页面状态：引导框稳定检测",
+      stabilityText: `稳定帧：${stableFrameCount} / ${STABLE_FRAMES_REQUIRED}`,
+      signatureText: `重复检测：签名差异 ${diff}`,
+    });
+    return stableFrameCount >= STABLE_FRAMES_REQUIRED;
+  }
+
+  async function scanCurrentFrame(options = {}) {
+    const { automatic = false } = options;
+    const now = Date.now();
+    if (isScanning) return;
+    if (now - lastCaptureAt < 1200) {
+      if (!automatic) showToast("识别过于频繁，请稍后再试");
+      return;
+    }
+    if (!stream) {
+      if (!automatic) showToast("请先启动摄像头");
+      return;
+    }
+
+    currentGuideBox = currentGuideBox || buildGuidePageBox();
+    setPageBox(currentGuideBox, "请将绘本页放入引导框", "guide");
+
+    const signature = captureFrameSignature();
+    const isStable = updateFrameStability(signature);
+    if (automatic && !isStable) {
+      setStatus("自动扫描中：等待画面稳定...");
+      return;
+    }
+
+    const scannedDiff = signatureDiff(signature, lastScannedSignature);
+    if (automatic && scannedDiff <= SIGNATURE_DIFF_THRESHOLD) {
+      updateStateBadges({
+        pageState: "页面状态：与上一结果接近",
+        stabilityText: `稳定帧：${stableFrameCount} / ${STABLE_FRAMES_REQUIRED}`,
+        signatureText: `重复检测：命中缓存阈值 ${scannedDiff}`,
+      });
+      setStatus("自动扫描中：当前页面与上次识别结果接近，已跳过重复请求。");
+      return;
+    }
+
+    isScanning = true;
+    lastCaptureAt = now;
+    captureBtn.disabled = true;
+    captureBtn.textContent = automatic ? "自动识别中..." : "识别中...";
+    setStatus(automatic ? "自动扫描命中稳定帧，正在上传..." : "正在压缩并上传当前画面...");
+
+    try {
+      const blob = await captureFrameBlob();
+      const formData = new FormData();
+      formData.append("image", blob, "camera-frame.jpg");
+      formData.append("session_id", scanSessionId);
+      formData.append("prompt", promptInput.value.trim());
+      formData.append("narration_style", styleSelect.value);
+      formData.append("audience_age", ageSelect.value);
+      formData.append("response_mode", modeSelect?.value || "fast");
+      formData.append("crop_source", "guide");
+      formData.append("crop_x", String(currentGuideBox.x));
+      formData.append("crop_y", String(currentGuideBox.y));
+      formData.append("crop_width", String(currentGuideBox.width));
+      formData.append("crop_height", String(currentGuideBox.height));
+
+      const result = await apiRequest("/api/stories/scan", {
+        method: "POST",
+        body: formData,
+      });
+
+      lastScannedSignature = signature;
+      stableFrameCount = 0;
+      lastFrameSignature = signature;
+      renderScanResult(result);
+      updateStateBadges({
+        pageState: automatic ? "页面状态：自动识别完成" : "页面状态：手动识别完成",
+        stabilityText: `稳定帧：0 / ${STABLE_FRAMES_REQUIRED}`,
+        signatureText: "重复检测：已记录当前页",
+      });
+      setStatus(automatic ? "自动识别完成，继续监测翻页。" : "识别完成。你可以翻页后继续扫描。");
+      if (!automatic) showToast("实时识别完成");
+    } catch (error) {
+      showToast(error.message || "识别失败");
+      setStatus(`识别失败：${error.message || "未知错误"}`);
+    } finally {
+      isScanning = false;
+      captureBtn.disabled = !stream;
+      captureBtn.textContent = "识别当前页";
+    }
+  }
+
+  startBtn?.addEventListener("click", startCamera);
+  captureBtn?.addEventListener("click", () => scanCurrentFrame({ automatic: false }));
+  autoScanSelect?.addEventListener("change", restartAutoScanIfNeeded);
+  intervalSelect?.addEventListener("change", restartAutoScanIfNeeded);
+
+  window.addEventListener("beforeunload", () => {
+    stopAutoScan();
+    if (stream) {
+      stream.getTracks().forEach((track) => track.stop());
+    }
+  });
+
+  await ensureAuth();
+});

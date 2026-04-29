@@ -140,6 +140,11 @@ async def ui_reset_password_page() -> FileResponse:
     return FileResponse(STATIC_DIR / "reset-password.html")
 
 
+@app.get("/ui/camera", include_in_schema=False)
+async def ui_camera_page() -> FileResponse:
+    return FileResponse(STATIC_DIR / "camera.html")
+
+
 @app.get("/ui/dashboard", include_in_schema=False)
 async def ui_dashboard_page() -> RedirectResponse:
     return RedirectResponse(url="/ui/books")

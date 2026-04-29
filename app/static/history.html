@@ -26,6 +26,7 @@
       <a data-nav="books" href="/ui/books">绘本管理</a>
       <a data-nav="upload" href="/ui/upload">图片上传</a>
       <a data-nav="generate" href="/ui/generate">故事生成</a>
+      <a data-nav="camera" href="/ui/camera">实时识别</a>
       <a data-nav="history" href="/ui/history">故事历史</a>
     </nav>
 
@@ -64,26 +65,26 @@
 
         <section id="quality-tab-panel" class="detail-tab-panel">
           <div class="quality-panel history-quality-panel">
-          <div class="quality-toolbar">
-            <div class="quality-toolbar-left">
-              <select id="history-quality-mode" class="select toolbar-select">
-                <option value="basic">基础评分（规则）</option>
-                <option value="deep">深度评分（LLM）</option>
-              </select>
-              <select id="history-judge-samples" class="select toolbar-select" disabled>
-                <option value="1">采样 1 次</option>
-                <option value="2">采样 2 次</option>
-                <option value="3">采样 3 次</option>
-              </select>
+            <div class="quality-toolbar">
+              <div class="quality-toolbar-left">
+                <select id="history-quality-mode" class="select toolbar-select">
+                  <option value="basic">基础评分（规则）</option>
+                  <option value="deep">深度评分（LLM）</option>
+                </select>
+                <select id="history-judge-samples" class="select toolbar-select" disabled>
+                  <option value="1">采样 1 次</option>
+                  <option value="2">采样 2 次</option>
+                  <option value="3">采样 3 次</option>
+                </select>
+              </div>
+              <button id="refresh-quality" class="btn btn-soft" type="button">刷新评分</button>
             </div>
-            <button id="refresh-quality" class="btn btn-soft" type="button">刷新评分</button>
-          </div>
 
-          <div id="quality-checks" class="quality-checks"></div>
-          <div id="quality-llm-scores" class="quality-llm-scores hidden"></div>
-          <div id="quality-metrics" class="quality-metrics"></div>
-          <div id="quality-judge" class="quality-judge">LLM评估：未启用</div>
-          <div id="quality-summary" class="quality-summary">暂无评分结果。</div>
+            <div id="quality-checks" class="quality-checks"></div>
+            <div id="quality-llm-scores" class="quality-llm-scores hidden"></div>
+            <div id="quality-metrics" class="quality-metrics"></div>
+            <div id="quality-judge" class="quality-judge">LLM评估：未启用</div>
+            <div id="quality-summary" class="quality-summary">暂无评分结果。</div>
           </div>
         </section>
       </section>
