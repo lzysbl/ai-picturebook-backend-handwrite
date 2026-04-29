@@ -56,6 +56,15 @@
     </main>
   </div>
 
+  <div id="image-preview-modal" class="image-modal hidden" aria-hidden="true">
+    <div class="image-modal-backdrop" data-close-preview></div>
+    <div class="image-modal-dialog" role="dialog" aria-modal="true" aria-label="绘本原图预览">
+      <button id="close-image-preview" class="image-modal-close" type="button" aria-label="关闭预览">×</button>
+      <img id="image-preview-large" class="image-modal-img" alt="绘本原图预览" />
+      <div id="image-preview-caption" class="image-modal-caption"></div>
+    </div>
+  </div>
+
   <div id="toast" class="toast"></div>
   <script src="/static/ui-common.js"></script>
   <script src="/static/workspace-common.js"></script>

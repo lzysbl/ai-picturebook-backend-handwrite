@@ -488,12 +488,16 @@ a {
   display: flex;
   flex-direction: column;
   gap: 6px;
+  width: 100%;
   padding: 8px;
   border: 1px solid var(--border);
   border-radius: 14px;
   background: rgba(255, 255, 255, 0.78);
   color: var(--text);
-  text-decoration: none;
+  font: inherit;
+  cursor: pointer;
+  appearance: none;
+  text-align: left;
 }
 
 .book-detail-image:hover {
@@ -512,6 +516,75 @@ a {
 .book-detail-image span {
   color: var(--text-muted);
   font-size: 12px;
+  text-align: center;
+}
+
+.modal-open {
+  overflow: hidden;
+}
+
+.image-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 28px;
+}
+
+.image-modal.hidden {
+  display: none;
+}
+
+.image-modal-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(15, 29, 52, 0.62);
+  backdrop-filter: blur(8px);
+}
+
+.image-modal-dialog {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-width: min(92vw, 980px);
+  max-height: 92vh;
+  padding: 14px;
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow: 0 24px 70px rgba(18, 38, 74, 0.28);
+}
+
+.image-modal-close {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  width: 36px;
+  height: 36px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.92);
+  color: var(--text);
+  font-size: 24px;
+  line-height: 1;
+  cursor: pointer;
+  box-shadow: 0 8px 22px rgba(37, 84, 150, 0.16);
+}
+
+.image-modal-img {
+  max-width: 100%;
+  max-height: calc(92vh - 90px);
+  object-fit: contain;
+  border-radius: 14px;
+  background: #fff;
+}
+
+.image-modal-caption {
+  color: var(--text-muted);
+  font-size: 14px;
   text-align: center;
 }
 
