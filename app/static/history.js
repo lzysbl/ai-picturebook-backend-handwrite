@@ -473,7 +473,6 @@ window.addEventListener("DOMContentLoaded", async () => {
       const fullText = story.story_content || "";
       const previewLimit = 140;
       const previewText = fullText.length > previewLimit ? `${fullText.slice(0, previewLimit)}...` : fullText;
-      const needExpand = fullText.length > previewLimit;
       const score = baseScoreCache.get(String(story.id)) || null;
 
       const item = document.createElement("div");
@@ -488,23 +487,11 @@ window.addEventListener("DOMContentLoaded", async () => {
         <div class="item-score-line" data-score-line="${story.id}">${renderScoreLine(score)}</div>
         <div class="item-sub" data-role="preview">${previewText}</div>
         <div class="item-actions">
-          ${needExpand ? '<button class="btn btn-soft" data-role="toggle" type="button">展开全文</button>' : ""}
           <button class="btn btn-soft btn-danger-soft" data-delete-id="${story.id}" type="button">删除</button>
           <button class="btn btn-soft" data-story-id="${story.id}" type="button">查看详情</button>
         </div>
       `;
       list.appendChild(item);
-
-      const toggleBtn = item.querySelector('button[data-role="toggle"]');
-      const previewNode = item.querySelector('[data-role="preview"]');
-      if (toggleBtn && previewNode) {
-        let expanded = false;
-        toggleBtn.addEventListener("click", () => {
-          expanded = !expanded;
-          previewNode.textContent = expanded ? fullText : previewText;
-          toggleBtn.textContent = expanded ? "收起" : "展开全文";
-        });
-      }
     });
 
     list.querySelectorAll("button[data-story-id]").forEach((btn) => {
