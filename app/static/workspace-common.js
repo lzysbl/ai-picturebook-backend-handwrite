@@ -60,7 +60,7 @@ function fillBookSelect(select, books) {
   books.forEach((book) => {
     const option = document.createElement("option");
     option.value = String(book.id);
-    option.textContent = `${book.id} - ${book.title}`;
+    option.textContent = book.title;
     select.appendChild(option);
   });
 

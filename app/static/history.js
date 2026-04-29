@@ -403,7 +403,7 @@ window.addEventListener("DOMContentLoaded", async () => {
     booksCache.forEach((book) => {
       const option = document.createElement("option");
       option.value = String(book.id);
-      option.textContent = `${book.id} - ${book.title}`;
+      option.textContent = book.title;
       filterSelect.appendChild(option);
     });
 
