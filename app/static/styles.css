@@ -464,6 +464,12 @@ a {
   overflow: hidden;
 }
 
+.history-panel-detail {
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding-right: 12px;
+}
+
 .history-panel .list {
   flex: 1;
   min-height: 0;
@@ -476,8 +482,9 @@ a {
 
 .history-panel .story-output {
   margin-top: 10px;
-  flex: 1;
-  min-height: 180px;
+  flex: 0 0 auto;
+  min-height: 260px;
+  max-height: 38vh;
   overflow: auto;
 }
 
