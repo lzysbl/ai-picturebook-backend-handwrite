@@ -13,7 +13,6 @@ from app.db.session import SessionLocal, get_db
 from app.routers.users import get_current_user
 from app.schemas.common import ApiResponse
 from app.schemas.story import StoryEvaluateRequest, StoryGenerateData, StoryGenerateRequest, StoryInfo
-from app.services.ai_service import analyze_images
 from app.services.book_service import get_book_by_id_and_user
 from app.services.eval_service import evaluate_story_full
 from app.services.image_service import list_book_images
@@ -31,6 +30,7 @@ from app.services.task_progress_service import (
     task_public_view,
     update_story_task,
 )
+from app.services.vision_analysis_service import analyze_images
 from app.utils.rate_limiter import enforce_rate_limit
 
 router = APIRouter(prefix="/api/stories", tags=["Stories"])

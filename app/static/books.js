@@ -22,8 +22,13 @@ window.addEventListener("DOMContentLoaded", async () => {
   const imagePreviewLarge = document.getElementById("image-preview-large");
   const imagePreviewCaption = document.getElementById("image-preview-caption");
   const closeImagePreviewBtn = document.getElementById("close-image-preview");
+  const prevImagePreviewBtn = document.getElementById("prev-image-preview");
+  const nextImagePreviewBtn = document.getElementById("next-image-preview");
 
   let booksCache = [];
+  let currentDetailBookId = "";
+  let previewImages = [];
+  let previewIndex = 0;
   const bookImagesCache = new Map();
 
   async function loadBookImages(bookId) {
@@ -44,13 +49,33 @@ window.addEventListener("DOMContentLoaded", async () => {
     window.location.href = `/ui/history?book_id=${encodeURIComponent(bookId)}`;
   }
 
-  function openImagePreview(imageUrl, caption) {
+  function renderImagePreview() {
     if (!imagePreviewModal || !imagePreviewLarge || !imagePreviewCaption) return;
-    imagePreviewLarge.src = imageUrl;
-    imagePreviewCaption.textContent = caption || "绘本原图";
+    const current = previewImages[previewIndex];
+    if (!current) return;
+
+    imagePreviewLarge.src = current.url;
+    imagePreviewCaption.textContent = `${current.caption}（${previewIndex + 1}/${previewImages.length}）`;
+    if (prevImagePreviewBtn) prevImagePreviewBtn.disabled = previewIndex <= 0;
+    if (nextImagePreviewBtn) nextImagePreviewBtn.disabled = previewIndex >= previewImages.length - 1;
+  }
+
+  function openImagePreview(images, startIndex) {
+    if (!imagePreviewModal || !imagePreviewLarge || !imagePreviewCaption) return;
+    previewImages = images;
+    previewIndex = Math.max(0, Math.min(Number(startIndex || 0), previewImages.length - 1));
+    renderImagePreview();
     imagePreviewModal.classList.remove("hidden");
     imagePreviewModal.setAttribute("aria-hidden", "false");
     document.body.classList.add("modal-open");
+  }
+
+  function moveImagePreview(step) {
+    if (!previewImages.length) return;
+    const nextIndex = previewIndex + step;
+    if (nextIndex < 0 || nextIndex >= previewImages.length) return;
+    previewIndex = nextIndex;
+    renderImagePreview();
   }
 
   function closeImagePreview() {
@@ -58,26 +83,72 @@ window.addEventListener("DOMContentLoaded", async () => {
     imagePreviewModal.classList.add("hidden");
     imagePreviewModal.setAttribute("aria-hidden", "true");
     imagePreviewLarge.removeAttribute("src");
+    previewImages = [];
+    previewIndex = 0;
     document.body.classList.remove("modal-open");
+  }
+
+  async function deleteBook(bookId, button) {
+    const book = booksCache.find((item) => String(item.id) === String(bookId));
+    if (!book) {
+      showToast("没有找到该绘本");
+      return;
+    }
+
+    const ok = window.confirm(`确认删除绘本《${book.title}》吗？相关图片和故事记录也会一并删除。`);
+    if (!ok) return;
+
+    const oldText = button?.textContent;
+    if (button) {
+      button.disabled = true;
+      button.textContent = "删除中...";
+    }
+
+    try {
+      await apiRequest(`/api/books/${bookId}`, { method: "DELETE" });
+      bookImagesCache.delete(String(bookId));
+      if (getSelectedBookId() === String(bookId)) {
+        setSelectedBookId("");
+      }
+      if (currentDetailBookId === String(bookId)) {
+        currentDetailBookId = "";
+        detailSection?.classList.add("hidden");
+        if (detail) detail.innerHTML = "";
+      }
+      showToast("删除成功");
+      await refreshBooks();
+    } catch (error) {
+      showToast(error.message || "删除失败");
+    } finally {
+      if (button) {
+        button.disabled = false;
+        button.textContent = oldText;
+      }
+    }
   }
 
   function renderBookDetail(book, images) {
     if (!detail || !detailSection) return;
+    currentDetailBookId = String(book.id);
 
     const coverUrl = toPublicImageUrl(book.cover_image || images[0]?.image_path);
     const coverHtml = coverUrl
       ? `<img class="book-detail-cover" src="${coverUrl}" alt="${book.title}封面" loading="lazy" />`
       : '<div class="book-detail-cover book-cover-empty">无封面</div>';
 
+    const previewData = images.map((image) => ({
+      url: toPublicImageUrl(image.image_path),
+      caption: `第 ${image.image_order} 页`,
+    }));
+
     const imagesHtml = images.length
       ? images
-          .map((image) => {
-            const imageUrl = toPublicImageUrl(image.image_path);
-            const caption = `第 ${image.image_order} 页`;
+          .map((image, index) => {
+            const currentPreview = previewData[index];
             return `
-              <button class="book-detail-image" type="button" data-preview-url="${imageUrl}" data-preview-caption="${caption}">
-                <img src="${imageUrl}" alt="${caption}" loading="lazy" />
-                <span>${caption}</span>
+              <button class="book-detail-image" type="button" data-preview-index="${index}">
+                <img src="${currentPreview.url}" alt="${currentPreview.caption}" loading="lazy" />
+                <span>${currentPreview.caption}</span>
               </button>
             `;
           })
@@ -95,6 +166,7 @@ window.addEventListener("DOMContentLoaded", async () => {
             <a class="btn btn-soft" href="/ui/upload" data-action="upload">继续上传图片</a>
             <a class="btn btn-soft" href="/ui/generate" data-action="generate">生成故事</a>
             <button class="btn btn-primary" type="button" data-action="stories">查看绘本故事</button>
+            <button class="btn btn-soft btn-danger-soft" type="button" data-action="delete">删除绘本</button>
           </div>
         </div>
       </div>
@@ -106,9 +178,12 @@ window.addEventListener("DOMContentLoaded", async () => {
     detail.querySelector('[data-action="stories"]')?.addEventListener("click", () => openStoriesForBook(book.id));
     detail.querySelector('[data-action="upload"]')?.addEventListener("click", () => setSelectedBookId(book.id));
     detail.querySelector('[data-action="generate"]')?.addEventListener("click", () => setSelectedBookId(book.id));
-    detail.querySelectorAll("[data-preview-url]").forEach((button) => {
+    detail.querySelector('[data-action="delete"]')?.addEventListener("click", async (event) => {
+      await deleteBook(book.id, event.currentTarget);
+    });
+    detail.querySelectorAll("[data-preview-index]").forEach((button) => {
       button.addEventListener("click", () => {
-        openImagePreview(button.getAttribute("data-preview-url"), button.getAttribute("data-preview-caption"));
+        openImagePreview(previewData, Number(button.getAttribute("data-preview-index") || 0));
       });
     });
     detailSection.classList.remove("hidden");
@@ -167,6 +242,7 @@ window.addEventListener("DOMContentLoaded", async () => {
         <div class="item-actions">
           <button class="btn btn-soft" type="button" data-detail-id="${book.id}">查看绘本详情</button>
           <button class="btn btn-primary" type="button" data-stories-id="${book.id}">查看绘本故事</button>
+          <button class="btn btn-soft btn-danger-soft" type="button" data-delete-id="${book.id}">删除绘本</button>
         </div>
       `;
       list.appendChild(item);
@@ -183,6 +259,12 @@ window.addEventListener("DOMContentLoaded", async () => {
         openStoriesForBook(button.getAttribute("data-stories-id"));
       });
     });
+
+    list.querySelectorAll("[data-delete-id]").forEach((button) => {
+      button.addEventListener("click", async () => {
+        await deleteBook(button.getAttribute("data-delete-id"), button);
+      });
+    });
   }
 
   async function refreshBooks() {
@@ -191,14 +273,21 @@ window.addEventListener("DOMContentLoaded", async () => {
   }
 
   closeDetailBtn?.addEventListener("click", () => {
+    currentDetailBookId = "";
     detailSection?.classList.add("hidden");
   });
 
   closeImagePreviewBtn?.addEventListener("click", closeImagePreview);
+  prevImagePreviewBtn?.addEventListener("click", () => moveImagePreview(-1));
+  nextImagePreviewBtn?.addEventListener("click", () => moveImagePreview(1));
   imagePreviewModal?.querySelector("[data-close-preview]")?.addEventListener("click", closeImagePreview);
   document.addEventListener("keydown", (event) => {
     if (event.key === "Escape" && imagePreviewModal && !imagePreviewModal.classList.contains("hidden")) {
       closeImagePreview();
+    }
+    if (imagePreviewModal && !imagePreviewModal.classList.contains("hidden")) {
+      if (event.key === "ArrowLeft") moveImagePreview(-1);
+      if (event.key === "ArrowRight") moveImagePreview(1);
     }
   });
 

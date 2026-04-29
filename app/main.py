@@ -1,4 +1,4 @@
-"""FastAPI 应用入口。"""
+"""FastAPI application entrypoint."""
 
 from __future__ import annotations
 
@@ -33,18 +33,13 @@ BASE_DIR = Path(__file__).resolve().parent
 STATIC_DIR = BASE_DIR / "static"
 UPLOAD_DIR = Path(settings.upload_dir).resolve()
 
-# 挂载静态资源目录（前端 JS/CSS）
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
-
-# 挂载上传文件目录（用于页面展示上传后的图片）
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 app.mount("/uploads", StaticFiles(directory=UPLOAD_DIR), name="uploads")
 
 
 @app.middleware("http")
 async def request_logging_middleware(request: Request, call_next):
-    """记录请求日志并注入 request_id。"""
-
     request_id = request.headers.get("x-request-id") or uuid.uuid4().hex[:12]
     set_request_id(request_id)
 
@@ -71,8 +66,6 @@ async def request_logging_middleware(request: Request, call_next):
 
 @app.exception_handler(HTTPException)
 async def http_exception_handler(_: Request, exc: HTTPException) -> JSONResponse:
-    """HTTP 异常统一返回格式。"""
-
     logger.warning("http_exception status=%s detail=%s", exc.status_code, exc.detail)
     payload = ApiResponse(
         success=False,
@@ -84,8 +77,6 @@ async def http_exception_handler(_: Request, exc: HTTPException) -> JSONResponse
 
 @app.exception_handler(RequestValidationError)
 async def request_validation_exception_handler(_: Request, exc: RequestValidationError) -> JSONResponse:
-    """参数校验异常统一返回格式。"""
-
     logger.warning("validation_exception errors=%s", exc.errors())
     payload = ApiResponse(
         success=False,
@@ -97,8 +88,6 @@ async def request_validation_exception_handler(_: Request, exc: RequestValidatio
 
 @app.exception_handler(Exception)
 async def unhandled_exception_handler(_: Request, exc: Exception) -> JSONResponse:
-    """未知异常统一返回格式。"""
-
     logger.exception("unhandled_exception error=%s", exc)
     payload = ApiResponse(
         success=False,
@@ -110,8 +99,6 @@ async def unhandled_exception_handler(_: Request, exc: Exception) -> JSONRespons
 
 @app.on_event("startup")
 async def on_startup() -> None:
-    """应用启动时初始化资源。"""
-
     await init_db()
     await init_redis()
     logger.info("application.startup_complete")
@@ -119,72 +106,62 @@ async def on_startup() -> None:
 
 @app.on_event("shutdown")
 async def on_shutdown() -> None:
-    """应用停止时释放资源。"""
-
     await close_redis()
     logger.info("application.shutdown_complete")
 
 
 @app.get("/", include_in_schema=False)
 async def root_redirect() -> RedirectResponse:
-    """默认跳转到登录页。"""
-
     return RedirectResponse(url="/ui/login")
 
 
 @app.get("/ui", include_in_schema=False)
 async def ui_redirect() -> RedirectResponse:
-    """统一 UI 入口，跳转到登录页。"""
-
     return RedirectResponse(url="/ui/login")
 
 
 @app.get("/ui/login", include_in_schema=False)
 async def ui_login_page() -> FileResponse:
-    """登录页面。"""
-
     return FileResponse(STATIC_DIR / "login.html")
 
 
 @app.get("/ui/register", include_in_schema=False)
 async def ui_register_page() -> FileResponse:
-    """注册页面。"""
-
     return FileResponse(STATIC_DIR / "register.html")
+
+
+@app.get("/ui/forgot-password", include_in_schema=False)
+async def ui_forgot_password_page() -> FileResponse:
+    return FileResponse(STATIC_DIR / "forgot-password.html")
+
+
+@app.get("/ui/reset-password", include_in_schema=False)
+async def ui_reset_password_page() -> FileResponse:
+    return FileResponse(STATIC_DIR / "reset-password.html")
 
 
 @app.get("/ui/dashboard", include_in_schema=False)
 async def ui_dashboard_page() -> RedirectResponse:
-    """兼容旧入口：重定向到绘本管理页。"""
-
     return RedirectResponse(url="/ui/books")
 
 
 @app.get("/ui/books", include_in_schema=False)
 async def ui_books_page() -> FileResponse:
-    """绘本管理页面。"""
-
     return FileResponse(STATIC_DIR / "books.html")
 
 
 @app.get("/ui/upload", include_in_schema=False)
 async def ui_upload_page() -> FileResponse:
-    """图片上传页面。"""
-
     return FileResponse(STATIC_DIR / "upload.html")
 
 
 @app.get("/ui/generate", include_in_schema=False)
 async def ui_generate_page() -> FileResponse:
-    """故事生成页面。"""
-
     return FileResponse(STATIC_DIR / "generate.html")
 
 
 @app.get("/ui/history", include_in_schema=False)
 async def ui_history_page() -> FileResponse:
-    """故事历史页面。"""
-
     return FileResponse(STATIC_DIR / "history.html")
 
 
@@ -193,4 +170,3 @@ app.include_router(users.router)
 app.include_router(books.router)
 app.include_router(images.router)
 app.include_router(stories.router)
-

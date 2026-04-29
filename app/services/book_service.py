@@ -1,10 +1,14 @@
-"""绘本业务服务层。"""
+"""Book service layer."""
 
 from __future__ import annotations
+
+import shutil
+from pathlib import Path
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import settings
 from app.models.book import Book
 from app.models.book_image import BookImage
 
@@ -15,8 +19,6 @@ async def create_book(
     title: str,
     cover_image: str | None = None,
 ) -> Book:
-    """创建一本绘本。"""
-
     book = Book(user_id=user_id, title=title, cover_image=cover_image)
     db.add(book)
     await db.commit()
@@ -25,8 +27,6 @@ async def create_book(
 
 
 async def list_books_by_user(db: AsyncSession, user_id: int) -> list[Book]:
-    """查询用户绘本列表，并自动补全缺失封面。"""
-
     stmt = select(Book).where(Book.user_id == user_id).order_by(Book.created_at.desc())
     result = await db.execute(stmt)
     books = list(result.scalars().all())
@@ -43,8 +43,6 @@ async def list_books_by_user(db: AsyncSession, user_id: int) -> list[Book]:
 
 
 async def get_book_by_id_and_user(db: AsyncSession, book_id: int, user_id: int) -> Book | None:
-    """按 book_id + user_id 查询单本绘本，并自动补全缺失封面。"""
-
     stmt = select(Book).where(Book.id == book_id, Book.user_id == user_id)
     result = await db.execute(stmt)
     book = result.scalar_one_or_none()
@@ -58,13 +56,14 @@ async def get_book_by_id_and_user(db: AsyncSession, book_id: int, user_id: int) 
 
 
 async def delete_book(db: AsyncSession, book_id: int, user_id: int) -> Book | None:
-    """删除指定绘本，返回删除前对象。"""
-
     book = await get_book_by_id_and_user(db, book_id, user_id)
     if not book:
         return None
+
+    upload_dir = settings.upload_dir
     await db.delete(book)
     await db.commit()
+    _remove_book_upload_dir(upload_dir, book_id)
     return book
 
 
@@ -73,8 +72,6 @@ async def update_book_cover_image(
     book: Book,
     cover_image: str,
 ) -> Book:
-    """更新绘本封面图片。"""
-
     book.cover_image = cover_image
     await db.commit()
     await db.refresh(book)
@@ -82,8 +79,6 @@ async def update_book_cover_image(
 
 
 async def _fill_missing_cover_with_first_page(db: AsyncSession, book: Book) -> bool:
-    """若封面为空，自动使用第一页图片作为封面。"""
-
     if book.cover_image:
         return False
 
@@ -100,3 +95,11 @@ async def _fill_missing_cover_with_first_page(db: AsyncSession, book: Book) -> b
 
     book.cover_image = first_image_path
     return True
+
+
+def _remove_book_upload_dir(upload_dir: str, book_id: int) -> None:
+    """Remove local upload directory for a deleted book."""
+
+    book_dir = Path(upload_dir) / "books" / str(book_id)
+    if book_dir.exists():
+        shutil.rmtree(book_dir, ignore_errors=True)

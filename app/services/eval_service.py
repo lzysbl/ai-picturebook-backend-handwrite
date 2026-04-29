@@ -10,7 +10,7 @@ from typing import Any
 from openai import AsyncOpenAI
 
 from app.core.config import settings
-from app.services.ai_service import evaluate_story_quality
+from app.services.story_quality_service import build_paper_metrics, evaluate_story_quality
 
 ROLE_ENTITY_MARKERS = ["熊", "兔", "狐狸", "狼", "虎", "狮", "猴", "象", "猫", "狗", "龙"]
 _judge_client: AsyncOpenAI | None = None
@@ -199,6 +199,7 @@ async def evaluate_story_full(
         "automatic": base_quality,
         "metrics": metrics,
     }
+    response["paper_metrics"] = build_paper_metrics(base_quality, metrics)
 
     if not include_judge or not settings.judge_enabled:
         response["judge"] = {
@@ -242,4 +243,5 @@ async def evaluate_story_full(
             "estimated_cost_cny": _estimate_cost_cny(settings.judge_model, input_tokens, output_tokens),
         },
     }
+    response["paper_metrics"] = build_paper_metrics(base_quality, metrics)
     return response

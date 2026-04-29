@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import hashlib
+import secrets
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
@@ -50,10 +52,24 @@ def decode_access_token(token: str) -> dict[str, Any]:
     return jwt.decode(token, settings.secret_key, algorithms=[ALGORITHM])
 
 
+def generate_password_reset_token() -> str:
+    """Generate a one-time password reset token."""
+
+    return secrets.token_urlsafe(32)
+
+
+def hash_reset_token(token: str) -> str:
+    """Hash a reset token before storing it."""
+
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+
 __all__ = [
     "hash_password",
     "verify_password",
     "create_access_token",
     "decode_access_token",
+    "generate_password_reset_token",
+    "hash_reset_token",
     "JWTError",
 ]

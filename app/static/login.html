@@ -27,24 +27,24 @@
           <h2 class="auth-heading">让每张绘本图片<br />都能被讲成故事</h2>
           <p class="auth-text">
             支持多图上传、页码排序、自动分析与故事生成。<br />
-            页面已拆分为独立的登录、注册、工作台，便于答辩演示。
+            现在也支持邮箱找回密码，演示链路更完整。
           </p>
           <div class="chip-list">
             <span class="chip">FastAPI + MySQL</span>
-            <span class="chip">图片分析 Mock</span>
             <span class="chip">JWT 鉴权</span>
+            <span class="chip">邮箱找回密码</span>
           </div>
         </div>
       </section>
 
       <section class="card auth-form-card">
         <h2 class="section-title">账号登录</h2>
-        <p class="section-sub">请输入用户名和密码</p>
+        <p class="section-sub">请输入用户名或邮箱与密码</p>
 
         <form id="login-form" class="form">
           <div class="field">
-            <label class="field-label" for="username">用户名</label>
-            <input id="username" class="input" type="text" minlength="3" maxlength="32" required />
+            <label class="field-label" for="username">用户名或邮箱</label>
+            <input id="username" class="input" type="text" minlength="3" maxlength="255" required />
           </div>
           <div class="field">
             <label class="field-label" for="password">密码</label>
@@ -55,6 +55,9 @@
 
         <p class="auth-switch">
           还没有账号？<a href="/ui/register">去注册</a>
+        </p>
+        <p class="auth-switch">
+          忘记密码？<a href="/ui/forgot-password">去找回</a>
         </p>
       </section>
     </main>
