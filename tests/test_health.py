@@ -1,11 +1,27 @@
-"""测试说明。
+"""Health endpoint tests."""
 
-你要开发的第一个测试：
-1. 启动 TestClient
-2. 请求 /health
-3. 断言 status_code == 200
+from __future__ import annotations
 
-这样你在面试里能说：我不仅写接口，也有最基础的自动化测试。
-"""
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
 
-# TODO: 写 health 路由测试
+from app.routers.health import router as health_router
+
+
+def create_test_app() -> FastAPI:
+    """Create a minimal app for testing health routes without external services."""
+    app = FastAPI()
+    app.include_router(health_router)
+    return app
+
+
+def test_health_check_returns_ok() -> None:
+    """The basic health endpoint should respond without touching DB or Redis."""
+    client = TestClient(create_test_app())
+
+    response = client.get("/health")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["success"] is True
+    assert body["data"]["status"] == "ok"
