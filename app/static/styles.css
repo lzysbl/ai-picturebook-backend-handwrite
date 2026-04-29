@@ -477,7 +477,7 @@ a {
 .history-panel .story-output {
   margin-top: 10px;
   flex: 1;
-  min-height: 0;
+  min-height: 180px;
   overflow: auto;
 }
 
@@ -502,6 +502,97 @@ a {
   padding: 12px;
   white-space: pre-wrap;
   line-height: 1.6;
+}
+
+.detail-heading-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.detail-heading-row h2 {
+  margin: 0;
+}
+
+.detail-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.book-images-panel {
+  margin-top: 12px;
+  border: 1px solid var(--border);
+  border-radius: 13px;
+  background: rgba(255, 255, 255, 0.72);
+  padding: 10px;
+}
+
+.book-images-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.book-images-header h3 {
+  margin: 0;
+  font-size: 16px;
+}
+
+.book-image-viewer {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: #fff;
+  padding: 10px;
+  margin-bottom: 10px;
+}
+
+.book-image-large {
+  display: block;
+  width: 100%;
+  max-height: 360px;
+  object-fit: contain;
+  border-radius: 10px;
+  background: #f7f9fc;
+}
+
+.book-image-thumbs {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(86px, 1fr));
+  gap: 8px;
+  max-height: 220px;
+  overflow: auto;
+  padding-right: 4px;
+}
+
+.book-image-thumb {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.86);
+  padding: 6px;
+  cursor: pointer;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.book-image-thumb.active {
+  border-color: #5f9eff;
+  background: #eaf3ff;
+}
+
+.book-image-thumb img {
+  display: block;
+  width: 100%;
+  height: 76px;
+  object-fit: cover;
+  border-radius: 7px;
+  margin-bottom: 5px;
 }
 
 .progress-wrap {

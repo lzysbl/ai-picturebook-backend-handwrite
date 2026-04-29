@@ -44,7 +44,13 @@
       </section>
 
       <section class="card panel history-panel">
-        <h2>故事详情与评分</h2>
+        <div class="detail-heading-row">
+          <h2>故事详情与评分</h2>
+          <div class="detail-actions">
+            <button id="export-story-txt" class="btn btn-soft" type="button" disabled>导出 TXT</button>
+            <button id="export-story-md" class="btn btn-soft" type="button" disabled>导出 Markdown</button>
+          </div>
+        </div>
         <div id="story-meta" class="note">请先在左侧点击“查看详情”。</div>
 
         <section class="quality-panel history-quality-panel">
@@ -84,6 +90,18 @@
         </section>
 
         <pre id="story-detail" class="story-output"></pre>
+
+        <section class="book-images-panel">
+          <div class="book-images-header">
+            <h3>绘本原图浏览</h3>
+            <span id="book-images-count" class="item-sub">请选择故事记录</span>
+          </div>
+          <div id="book-image-viewer" class="book-image-viewer hidden">
+            <img id="book-image-large" class="book-image-large" alt="绘本原图预览" />
+            <div id="book-image-caption" class="item-sub"></div>
+          </div>
+          <div id="book-image-thumbs" class="book-image-thumbs"></div>
+        </section>
       </section>
     </main>
   </div>

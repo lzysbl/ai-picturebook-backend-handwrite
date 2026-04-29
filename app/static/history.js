@@ -9,6 +9,13 @@ window.addEventListener("DOMContentLoaded", async () => {
   const filterSelect = document.getElementById("history-book-filter");
   const detail = document.getElementById("story-detail");
   const meta = document.getElementById("story-meta");
+  const exportTxtBtn = document.getElementById("export-story-txt");
+  const exportMdBtn = document.getElementById("export-story-md");
+  const imageCount = document.getElementById("book-images-count");
+  const imageViewer = document.getElementById("book-image-viewer");
+  const imageLarge = document.getElementById("book-image-large");
+  const imageCaption = document.getElementById("book-image-caption");
+  const imageThumbs = document.getElementById("book-image-thumbs");
 
   const qualityModeSelect = document.getElementById("history-quality-mode");
   const judgeSamplesSelect = document.getElementById("history-judge-samples");
@@ -27,8 +34,61 @@ window.addEventListener("DOMContentLoaded", async () => {
   let storiesCache = [];
   let booksCache = [];
   let currentStoryId = null;
+  let currentStory = null;
   let scoreLoadToken = 0;
   const baseScoreCache = new Map();
+  const bookImagesCache = new Map();
+
+  function safeFilePart(text) {
+    return String(text || "story")
+      .replace(/[\\/:*?"<>|]+/g, "_")
+      .replace(/\s+/g, "_")
+      .slice(0, 80);
+  }
+
+  function getBookTitle(bookId) {
+    const book = findBookById(booksCache, bookId);
+    return book?.title || `绘本${bookId}`;
+  }
+
+  function downloadTextFile(filename, content, type = "text/plain;charset=utf-8") {
+    const blob = new Blob([content], { type });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+  }
+
+  function buildStoryExport(format) {
+    if (!currentStory) return null;
+    const bookTitle = getBookTitle(currentStory.book_id);
+    const createdAt = currentStory.created_at || "";
+    const storyText = currentStory.story_content || "";
+
+    if (format === "md") {
+      return {
+        filename: `${safeFilePart(bookTitle)}_故事_${currentStory.id}.md`,
+        content: `# ${bookTitle}\n\n- 故事ID：${currentStory.id}\n- 绘本ID：${currentStory.book_id}\n- 创建时间：${createdAt}\n\n---\n\n${storyText}\n`,
+        type: "text/markdown;charset=utf-8",
+      };
+    }
+
+    return {
+      filename: `${safeFilePart(bookTitle)}_故事_${currentStory.id}.txt`,
+      content: `绘本：${bookTitle}\n故事ID：${currentStory.id}\n绘本ID：${currentStory.book_id}\n创建时间：${createdAt}\n\n${storyText}\n`,
+      type: "text/plain;charset=utf-8",
+    };
+  }
+
+  function updateExportButtons() {
+    const disabled = !currentStory;
+    if (exportTxtBtn) exportTxtBtn.disabled = disabled;
+    if (exportMdBtn) exportMdBtn.disabled = disabled;
+  }
 
   function isDeepMode() {
     return qualityModeSelect && qualityModeSelect.value === "deep";
@@ -93,8 +153,73 @@ window.addEventListener("DOMContentLoaded", async () => {
   }
 
   function renderStoryDetail(story) {
+    currentStory = story;
+    updateExportButtons();
     meta.textContent = `故事 #${story.id} | 绘本 ${story.book_id} | 创建时间 ${story.created_at}`;
     detail.textContent = story.story_content || "";
+  }
+
+  function renderBookImages(images) {
+    if (!imageCount || !imageViewer || !imageLarge || !imageCaption || !imageThumbs) return;
+
+    imageThumbs.innerHTML = "";
+    if (!images.length) {
+      imageViewer.classList.add("hidden");
+      imageLarge.removeAttribute("src");
+      imageCaption.textContent = "";
+      imageCount.textContent = "该绘本暂无原图";
+      imageThumbs.innerHTML = '<div class="item-sub">暂无图片。</div>';
+      return;
+    }
+
+    imageCount.textContent = `共 ${images.length} 张`;
+
+    function selectImage(image, thumbNode) {
+      const url = toPublicImageUrl(image.image_path);
+      imageLarge.src = url;
+      imageCaption.textContent = `第 ${image.image_order} 页`;
+      imageViewer.classList.remove("hidden");
+      imageThumbs.querySelectorAll(".book-image-thumb").forEach((node) => node.classList.remove("active"));
+      if (thumbNode) thumbNode.classList.add("active");
+    }
+
+    images.forEach((image, index) => {
+      const thumb = document.createElement("button");
+      thumb.className = "book-image-thumb";
+      thumb.type = "button";
+      thumb.innerHTML = `
+        <img src="${toPublicImageUrl(image.image_path)}" alt="第 ${image.image_order} 页" />
+        <span>第 ${image.image_order} 页</span>
+      `;
+      thumb.addEventListener("click", () => selectImage(image, thumb));
+      imageThumbs.appendChild(thumb);
+      if (index === 0) selectImage(image, thumb);
+    });
+  }
+
+  async function loadBookImages(bookId) {
+    const key = String(bookId || "");
+    if (!key) return [];
+    if (bookImagesCache.has(key)) return bookImagesCache.get(key);
+    const images = await apiRequest(`/api/books/${bookId}/images`);
+    const normalized = Array.isArray(images)
+      ? images.slice().sort((a, b) => Number(a.image_order || 0) - Number(b.image_order || 0))
+      : [];
+    bookImagesCache.set(key, normalized);
+    return normalized;
+  }
+
+  async function loadAndRenderBookImages(bookId) {
+    if (imageCount) imageCount.textContent = "原图加载中...";
+    if (imageThumbs) imageThumbs.innerHTML = "";
+    if (imageViewer) imageViewer.classList.add("hidden");
+    try {
+      const images = await loadBookImages(bookId);
+      renderBookImages(images);
+    } catch (error) {
+      if (imageCount) imageCount.textContent = "原图加载失败";
+      if (imageThumbs) imageThumbs.innerHTML = `<div class="item-sub">${error.message || "请稍后重试"}</div>`;
+    }
   }
 
   function renderQualityEmpty(message = "暂无评分结果。") {
@@ -239,6 +364,7 @@ window.addEventListener("DOMContentLoaded", async () => {
     const story = await apiRequest(`/api/stories/${storyId}`);
     currentStoryId = story.id;
     renderStoryDetail(story);
+    await loadAndRenderBookImages(story.book_id);
     await loadStoryQuality(story.id, { refresh: false, cachedOnly: true });
   }
 
@@ -271,8 +397,13 @@ window.addEventListener("DOMContentLoaded", async () => {
 
       if (String(currentStoryId) === String(storyId)) {
         currentStoryId = null;
+        currentStory = null;
+        updateExportButtons();
         meta.textContent = "请先在左侧点击“查看详情”。";
         detail.textContent = "";
+        if (imageCount) imageCount.textContent = "请选择故事记录";
+        if (imageViewer) imageViewer.classList.add("hidden");
+        if (imageThumbs) imageThumbs.innerHTML = "";
         renderQualityEmpty();
       }
 
@@ -292,6 +423,11 @@ window.addEventListener("DOMContentLoaded", async () => {
       list.innerHTML = '<div class="item"><div class="item-sub">暂无故事记录。</div></div>';
       meta.textContent = "请先生成故事后再查看。";
       detail.textContent = "";
+      currentStory = null;
+      updateExportButtons();
+      if (imageCount) imageCount.textContent = "请选择故事记录";
+      if (imageViewer) imageViewer.classList.add("hidden");
+      if (imageThumbs) imageThumbs.innerHTML = "";
       renderQualityEmpty();
       currentStoryId = null;
       return;
@@ -417,6 +553,28 @@ window.addEventListener("DOMContentLoaded", async () => {
         refreshQualityBtn.disabled = false;
         refreshQualityBtn.textContent = oldText;
       }
+    });
+  }
+
+  if (exportTxtBtn) {
+    exportTxtBtn.addEventListener("click", () => {
+      const file = buildStoryExport("txt");
+      if (!file) {
+        showToast("请先选择一条故事记录");
+        return;
+      }
+      downloadTextFile(file.filename, file.content, file.type);
+    });
+  }
+
+  if (exportMdBtn) {
+    exportMdBtn.addEventListener("click", () => {
+      const file = buildStoryExport("md");
+      if (!file) {
+        showToast("请先选择一条故事记录");
+        return;
+      }
+      downloadTextFile(file.filename, file.content, file.type);
     });
   }
 
