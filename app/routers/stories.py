@@ -194,6 +194,55 @@ def _context_pages_to_generation_input(
     return pages
 
 
+def _page_summary_from_analysis(analysis_result: list[dict[str, Any]]) -> dict[str, Any]:
+    return live_summarize_page_for_live_story(analysis_result)
+
+
+def _build_character_registry(recent_pages: list[dict[str, Any]]) -> list[str]:
+    return live_build_character_registry(recent_pages)
+
+
+def _merge_scan_session_pages(
+    existing_pages: list[dict[str, Any]],
+    current_page: dict[str, Any],
+    max_pages: int = 3,
+) -> list[dict[str, Any]]:
+    return live_merge_scan_session_pages(existing_pages, current_page, max_pages=max_pages)
+
+
+def _build_live_scan_story(
+    analysis_result: list[dict[str, Any]],
+    narration_style: str | None,
+    audience_age: str | None,
+    extra_prompt: str | None,
+) -> str:
+    page = _page_summary_from_analysis(analysis_result)
+    return live_build_contextual_live_scan_story([], page, narration_style, audience_age, extra_prompt)
+
+
+def _build_contextual_live_scan_story(
+    recent_pages: list[dict[str, Any]],
+    current_page: dict[str, Any],
+    narration_style: str | None,
+    audience_age: str | None,
+    extra_prompt: str | None,
+) -> str:
+    return live_build_contextual_live_scan_story(
+        recent_pages=recent_pages,
+        current_page=current_page,
+        narration_style=narration_style,
+        audience_age=audience_age,
+        extra_prompt=extra_prompt,
+    )
+
+
+def _context_pages_to_generation_input(
+    recent_pages: list[dict[str, Any]],
+    current_page: dict[str, Any],
+) -> list[dict[str, Any]]:
+    return live_context_pages_to_generation_input(recent_pages, current_page)
+
+
 def _scan_cache_key(
     image_bytes: bytes,
     prompt: str | None,

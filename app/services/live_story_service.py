@@ -1,24 +1,56 @@
-﻿"""Helpers for turning page analysis into child-friendly live storytelling."""
+"""Helpers for turning page analysis into child-friendly live storytelling."""
 
 from __future__ import annotations
 
 from typing import Any
 
+ROLE_CN = "\u89d2\u8272"
+ACTION_CN = "\u52a8\u4f5c"
+OBJECT_CN = "\u5173\u952e\u7269\u4f53"
+TEXT_CN = "\u753b\u9762\u6587\u5b57"
+SCENE_CN = "\u573a\u666f"
+MOOD_CN = "\u60c5\u7eea"
+
+
+def _first_present(data: dict[str, Any], keys: list[str], default: Any) -> Any:
+    for key in keys:
+        if key in data and data[key] is not None:
+            return data[key]
+    return default
+
+
+def _as_list(value: Any, limit: int) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    out: list[str] = []
+    for item in value:
+        text = str(item).strip()
+        if text:
+            out.append(text)
+        if len(out) >= limit:
+            break
+    return out
+
 
 def summarize_page_for_live_story(analysis_result: list[dict[str, Any]]) -> dict[str, Any]:
     first = analysis_result[0] if analysis_result else {}
-    roles = first.get("角色", []) if isinstance(first.get("角色"), list) else []
-    actions = first.get("动作", []) if isinstance(first.get("动作"), list) else []
-    objects = first.get("关键物体", []) if isinstance(first.get("关键物体"), list) else []
-    texts = first.get("画面文字", []) if isinstance(first.get("画面文字"), list) else []
+
+    roles = _as_list(_first_present(first, [ROLE_CN, "roles"], []), 4)
+    actions = _as_list(_first_present(first, [ACTION_CN, "actions"], []), 3)
+    objects = _as_list(_first_present(first, [OBJECT_CN, "objects"], []), 3)
+    texts = _as_list(_first_present(first, [TEXT_CN, "texts"], []), 3)
+
+    scene = str(_first_present(first, [SCENE_CN, "scene"], "\u7ed8\u672c\u573a\u666f")).strip() or "\u7ed8\u672c\u573a\u666f"
+    mood = str(_first_present(first, [MOOD_CN, "mood"], "\u6e29\u548c")).strip() or "\u6e29\u548c"
+
     return {
         "page": int(first.get("page", 1) or 1),
-        "roles": [str(x).strip() for x in roles if str(x).strip()][:4],
-        "actions": [str(x).strip() for x in actions if str(x).strip()][:3],
-        "objects": [str(x).strip() for x in objects if str(x).strip()][:3],
-        "texts": [str(x).strip() for x in texts if str(x).strip()][:3],
-        "scene": str(first.get("场景") or "绘本场景"),
-        "mood": str(first.get("情绪") or "温暖"),
+        "roles": roles,
+        "actions": actions,
+        "objects": objects,
+        "texts": texts,
+        "scene": scene,
+        "mood": mood,
     }
 
 
@@ -60,12 +92,12 @@ def context_pages_to_generation_input(
         pages.append(
             {
                 "page": index,
-                "角色": page.get("roles", []),
-                "场景": page.get("scene", ""),
-                "动作": page.get("actions", []),
-                "情绪": page.get("mood", ""),
-                "关键物体": page.get("objects", []),
-                "画面文字": page.get("texts", []),
+                ROLE_CN: page.get("roles", []),
+                SCENE_CN: page.get("scene", ""),
+                ACTION_CN: page.get("actions", []),
+                MOOD_CN: page.get("mood", ""),
+                OBJECT_CN: page.get("objects", []),
+                TEXT_CN: page.get("texts", []),
             }
         )
     return pages
@@ -83,46 +115,42 @@ def build_contextual_live_scan_story(
     object_list = [str(o).strip() for o in current_page.get("objects", []) if str(o).strip()]
     text_list = [str(t).strip() for t in current_page.get("texts", []) if str(t).strip()]
 
-    if role_list:
-        subject = f"????{'?'.join(role_list[:3])}"
-    else:
-        subject = "???????"
+    subject = f"\u753b\u9762\u91cc\u7684{'\u3001'.join(role_list[:3])}" if role_list else "\u753b\u9762\u91cc\u7684\u5c0f\u4e3b\u89d2"
+    action_phrase = "\u3001".join(action_list[:2]) if action_list else "\u6b63\u5728\u5b89\u9759\u5730\u89c2\u5bdf\u5468\u56f4"
+    object_phrase = "\u3001".join(object_list[:3])
+    text_phrase = "\u3001".join(text_list[:3])
 
-    action_phrase = "?".join(action_list[:2]) if action_list else "?????????"
-    object_phrase = "?".join(object_list[:3])
-    text_phrase = "?".join(text_list[:3])
-
-    scene = str(current_page.get("scene") or "???????")
-    mood = str(current_page.get("mood") or "??")
+    scene = str(current_page.get("scene") or "\u4e00\u4e2a\u5b89\u9759\u7684\u5730\u65b9")
+    mood = str(current_page.get("mood") or "\u6e29\u548c")
 
     joined_tokens = " ".join([scene, subject, object_phrase, text_phrase]).upper()
-    factual_mode = any(k in joined_tokens for k in ["PASSPORT", "ID", "???", "??", "??"])
+    factual_mode = any(k in joined_tokens for k in ["PASSPORT", "ID", "\u8eab\u4efd\u8bc1", "\u62a4\u7167", "\u8bc1\u4ef6"])
 
     lines: list[str] = []
 
     if recent_pages:
         previous = recent_pages[-1]
         if previous.get("scene") == scene:
-            lines.append(f"???????????{scene}?")
+            lines.append(f"\u6545\u4e8b\u8fd8\u5728\u7ee7\u7eed\uff0c\u6211\u4eec\u8fd8\u5728{scene}\u3002")
         else:
-            lines.append(f"???????????{scene}?")
+            lines.append(f"\u7ffb\u5230\u8fd9\u4e00\u9875\uff0c\u753b\u9762\u6765\u5230\u4e86{scene}\u3002")
 
     if factual_mode:
-        lines.append(f"???????{subject}{action_phrase}?")
+        lines.append(f"\u753b\u9762\u4e2d\u53ef\u4ee5\u770b\u5230{subject}{action_phrase}\u3002")
     else:
-        lines.append(f"{subject}{action_phrase}??????{mood}????")
+        lines.append(f"{subject}{action_phrase}\uff0c\u753b\u9762\u6574\u4f53\u662f{mood}\u7684\u611f\u89c9\u3002")
 
     if object_phrase:
-        lines.append(f"????{object_phrase}?")
+        lines.append(f"\u8fd8\u80fd\u770b\u5230{object_phrase}\u3002")
     if text_phrase:
-        lines.append(f"????????{text_phrase}?")
+        lines.append(f"\u9875\u9762\u4e0a\u8fd8\u80fd\u770b\u5230\uff1a{text_phrase}\u3002")
 
     registry = build_character_registry([*recent_pages, current_page])
     if len(registry) >= 2 and not factual_mode:
-        lines.append(f"?????????????{'?'.join(registry[:4])}?")
+        lines.append(f"\u5230\u76ee\u524d\u4e3a\u6b62\uff0c\u6545\u4e8b\u91cc\u51fa\u73b0\u8fc7\uff1a{'\u3001'.join(registry[:4])}\u3002")
 
     if extra_prompt:
-        lines.append(f"?????????????{extra_prompt}?")
+        lines.append(f"\u8fd9\u4e00\u9875\u8fd8\u53ef\u4ee5\u7279\u522b\u5173\u6ce8\uff1a{extra_prompt}\u3002")
 
     return "\n".join(lines)
 
