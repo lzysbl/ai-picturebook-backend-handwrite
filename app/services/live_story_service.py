@@ -10,6 +10,7 @@ OBJECT_CN = "\u5173\u952e\u7269\u4f53"
 TEXT_CN = "\u753b\u9762\u6587\u5b57"
 SCENE_CN = "\u573a\u666f"
 MOOD_CN = "\u60c5\u7eea"
+SEP_CN = "\u3001"
 
 
 def _first_present(data: dict[str, Any], keys: list[str], default: Any) -> Any:
@@ -115,10 +116,11 @@ def build_contextual_live_scan_story(
     object_list = [str(o).strip() for o in current_page.get("objects", []) if str(o).strip()]
     text_list = [str(t).strip() for t in current_page.get("texts", []) if str(t).strip()]
 
-    subject = f"\u753b\u9762\u91cc\u7684{'\u3001'.join(role_list[:3])}" if role_list else "\u753b\u9762\u91cc\u7684\u5c0f\u4e3b\u89d2"
-    action_phrase = "\u3001".join(action_list[:2]) if action_list else "\u6b63\u5728\u5b89\u9759\u5730\u89c2\u5bdf\u5468\u56f4"
-    object_phrase = "\u3001".join(object_list[:3])
-    text_phrase = "\u3001".join(text_list[:3])
+    joined_roles = SEP_CN.join(role_list[:3])
+    subject = f"\u753b\u9762\u91cc\u7684{joined_roles}" if role_list else "\u753b\u9762\u91cc\u7684\u5c0f\u4e3b\u89d2"
+    action_phrase = SEP_CN.join(action_list[:2]) if action_list else "\u6b63\u5728\u5b89\u9759\u5730\u89c2\u5bdf\u5468\u56f4"
+    object_phrase = SEP_CN.join(object_list[:3])
+    text_phrase = SEP_CN.join(text_list[:3])
 
     scene = str(current_page.get("scene") or "\u4e00\u4e2a\u5b89\u9759\u7684\u5730\u65b9")
     mood = str(current_page.get("mood") or "\u6e29\u548c")
@@ -147,7 +149,8 @@ def build_contextual_live_scan_story(
 
     registry = build_character_registry([*recent_pages, current_page])
     if len(registry) >= 2 and not factual_mode:
-        lines.append(f"\u5230\u76ee\u524d\u4e3a\u6b62\uff0c\u6545\u4e8b\u91cc\u51fa\u73b0\u8fc7\uff1a{'\u3001'.join(registry[:4])}\u3002")
+        joined_registry = SEP_CN.join(registry[:4])
+        lines.append(f"\u5230\u76ee\u524d\u4e3a\u6b62\uff0c\u6545\u4e8b\u91cc\u51fa\u73b0\u8fc7\uff1a{joined_registry}\u3002")
 
     if extra_prompt:
         lines.append(f"\u8fd9\u4e00\u9875\u8fd8\u53ef\u4ee5\u7279\u522b\u5173\u6ce8\uff1a{extra_prompt}\u3002")
