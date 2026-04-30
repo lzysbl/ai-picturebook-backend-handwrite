@@ -1239,6 +1239,11 @@ a {
   pointer-events: none;
 }
 
+.camera-page-box[data-kind="guide"] {
+  border-style: dashed;
+  border-color: #53d3a5;
+}
+
 .camera-page-box-label {
   position: absolute;
   top: -28px;
@@ -1249,6 +1254,18 @@ a {
   color: #fff;
   font-size: 12px;
   white-space: nowrap;
+}
+
+.camera-detected-box {
+  position: absolute;
+  border: 3px solid #ffb347;
+  border-radius: 14px;
+  box-shadow: 0 0 0 2px rgba(255, 179, 71, 0.25);
+  pointer-events: none;
+}
+
+.camera-detected-box-label {
+  background: rgba(163, 83, 23, 0.92);
 }
 
 .camera-toolbar {

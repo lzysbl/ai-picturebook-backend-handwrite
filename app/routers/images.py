@@ -1,10 +1,8 @@
 """图片路由：上传与列表查询。"""
 
 from __future__ import annotations
-
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from sqlalchemy.ext.asyncio import AsyncSession
-
 from app.core.config import settings
 from app.db.session import get_db
 from app.routers.users import get_current_user
@@ -12,11 +10,11 @@ from app.schemas.book_image import BookImageInfo
 from app.schemas.common import ApiResponse
 from app.services.book_service import get_book_by_id_and_user, update_book_cover_image
 from app.services.image_service import create_book_image_record, list_book_images, save_upload_file
-
 router = APIRouter(prefix="/api/books", tags=["Images"])
 
 
 @router.post("/{book_id}/images/upload", response_model=ApiResponse)
+
 async def upload_images_api(
     book_id: int,
     files: list[UploadFile] = File(..., description="可一次上传一张或多张图片"),
@@ -75,3 +73,17 @@ async def list_images_api(
     images = await list_book_images(db, book_id)
     data = [BookImageInfo.model_validate(item).model_dump() for item in images]
     return ApiResponse(success=True, message="查询成功", data=data)
+
+
+
+
+
+
+
+
+
+
+
+
+
+

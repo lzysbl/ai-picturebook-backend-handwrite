@@ -6,8 +6,10 @@ window.addEventListener("DOMContentLoaded", async () => {
   const video = document.getElementById("camera-video");
   const canvas = document.getElementById("camera-canvas");
   const emptyHint = document.getElementById("camera-empty");
-  const pageBox = document.getElementById("camera-page-box");
-  const pageBoxLabel = document.getElementById("camera-page-box-label");
+  const guideBox = document.getElementById("camera-page-box");
+  const guideBoxLabel = document.getElementById("camera-page-box-label");
+  const detectedBox = document.getElementById("camera-detected-box");
+  const detectedBoxLabel = document.getElementById("camera-detected-box-label");
   const statusNode = document.getElementById("camera-status");
   const styleSelect = document.getElementById("camera-style");
   const ageSelect = document.getElementById("camera-age");
@@ -35,6 +37,7 @@ window.addEventListener("DOMContentLoaded", async () => {
   let stableFrameCount = 0;
   let scanSessionId = globalThis.crypto?.randomUUID?.() || `scan-${Date.now()}`;
   let currentGuideBox = null;
+  let currentDetectedBox = null;
 
   const STABLE_FRAMES_REQUIRED = 2;
   const SIGNATURE_DIFF_THRESHOLD = 18;
@@ -93,31 +96,55 @@ window.addEventListener("DOMContentLoaded", async () => {
     };
   }
 
-  function setPageBox(box, label, kind = "guide") {
-    if (!pageBox || !pageBoxLabel) return;
-    const safeBox = box || currentGuideBox || buildGuidePageBox();
-    pageBox.classList.remove("hidden");
-    pageBox.style.left = `${safeBox.x * 100}%`;
-    pageBox.style.top = `${safeBox.y * 100}%`;
-    pageBox.style.width = `${safeBox.width * 100}%`;
-    pageBox.style.height = `${safeBox.height * 100}%`;
-    pageBox.dataset.kind = kind;
-    pageBoxLabel.textContent = label;
+  function applyBox(target, labelTarget, box, label, kind) {
+    if (!target || !labelTarget) return;
+    if (!box) {
+      target.classList.add("hidden");
+      target.style.removeProperty("left");
+      target.style.removeProperty("top");
+      target.style.removeProperty("width");
+      target.style.removeProperty("height");
+      labelTarget.textContent = label;
+      if (kind) target.dataset.kind = kind;
+      return;
+    }
+
+    target.classList.remove("hidden");
+    target.style.left = `${box.x * 100}%`;
+    target.style.top = `${box.y * 100}%`;
+    target.style.width = `${box.width * 100}%`;
+    target.style.height = `${box.height * 100}%`;
+    target.dataset.kind = kind || "";
+    labelTarget.textContent = label;
+  }
+
+  function setGuideBox(box, label = "请将绘本页放入引导框") {
+    applyBox(guideBox, guideBoxLabel, box || currentGuideBox || buildGuidePageBox(), label, "guide");
+  }
+
+  function setDetectedBox(box, label = "后端识别框") {
+    applyBox(detectedBox, detectedBoxLabel, box, label, "detected");
   }
 
   function renderScanResult(result) {
     const analysisResult = Array.isArray(result?.analysis_result) ? result.analysis_result : [];
     const first = analysisResult[0] || {};
     const quality = result?.quality || null;
-    updateContextBadge(result?.context || null);
-    updateCropBadge(result?.crop_mode);
-
-    const cropBox = result?.crop_box && typeof result.crop_box === "object" ? result.crop_box : null;
     const cropMode = result?.crop_mode || "full_frame";
+    const cropBox = result?.crop_box && typeof result.crop_box === "object" ? result.crop_box : null;
+
+    updateContextBadge(result?.context || null);
+    updateCropBadge(cropMode);
+
+    setGuideBox(currentGuideBox, "引导框");
     if (cropMode === "model_crop" && cropBox) {
-      setPageBox(cropBox, "后端检测到页面", "detected");
-    } else {
-      setPageBox(currentGuideBox, "请将绘本页放入引导框", "guide");
+      currentDetectedBox = cropBox;
+      setDetectedBox(currentDetectedBox, "后端检测到页面");
+    } else if (cropMode === "frontend_crop" && cropBox) {
+      currentDetectedBox = cropBox;
+      setDetectedBox(currentDetectedBox, "前端检测到页面");
+    } else if (cropMode === "guide_crop" || cropMode === "full_frame") {
+      setDetectedBox(currentDetectedBox, currentDetectedBox ? "沿用上次识别框" : "后端识别框");
     }
 
     storyOutput.textContent = result?.story_content || "未返回讲述文本";
@@ -127,7 +154,14 @@ window.addEventListener("DOMContentLoaded", async () => {
       qualityPanel.classList.remove("hidden");
       const paper = quality.paper_metrics || {};
       const modeText = result?.response_mode === "full" ? "完整生成" : "快速响应";
-      const cropText = cropMode === "model_crop" ? "后端检测页框" : cropMode === "guide_crop" ? "引导框裁剪" : cropMode === "frontend_crop" ? "前端框裁剪" : "整图回退";
+      const cropText =
+        cropMode === "model_crop"
+          ? "后端检测页框"
+          : cropMode === "guide_crop"
+            ? "引导框裁剪"
+            : cropMode === "frontend_crop"
+              ? "前端框裁剪"
+              : "整图回退";
       qualitySummary.textContent =
         `${modeText} | ${cropText} | 整体 ${paper.overall ?? "-"} | 连贯 ${paper.coherence ?? "-"} | 适龄 ${paper.age_appropriateness ?? "-"} | 页面覆盖率 ${paper.page_coverage_ratio ?? "-"}`;
       analysisOutput.textContent = JSON.stringify(analysisResult, null, 2);
@@ -153,7 +187,8 @@ window.addEventListener("DOMContentLoaded", async () => {
       emptyHint?.classList.add("hidden");
       captureBtn.disabled = false;
       currentGuideBox = buildGuidePageBox();
-      setPageBox(currentGuideBox, "请将绘本页放入引导框", "guide");
+      setGuideBox(currentGuideBox);
+      setDetectedBox(currentDetectedBox, currentDetectedBox ? "沿用上次识别框" : "后端识别框");
       setStatus("摄像头已启动，请尽量让绘本页贴近引导框。");
       updateStateBadges({
         pageState: "页面状态：引导框模式",
@@ -288,7 +323,7 @@ window.addEventListener("DOMContentLoaded", async () => {
     }
 
     currentGuideBox = currentGuideBox || buildGuidePageBox();
-    setPageBox(currentGuideBox, "请将绘本页放入引导框", "guide");
+    setGuideBox(currentGuideBox);
 
     const signature = captureFrameSignature();
     const isStable = updateFrameStability(signature);
