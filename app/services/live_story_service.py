@@ -1,4 +1,4 @@
-"""Helpers for turning page analysis into child-friendly live storytelling."""
+﻿"""Helpers for turning page analysis into child-friendly live storytelling."""
 
 from __future__ import annotations
 
@@ -78,36 +78,51 @@ def build_contextual_live_scan_story(
     audience_age: str | None,
     extra_prompt: str | None,
 ) -> str:
-    style = (narration_style or "温柔").strip()
-    age = (audience_age or "3-6").strip()
-    roles = "、".join(current_page.get("roles", [])) or "小主角"
-    actions = "、".join(current_page.get("actions", [])) or "在轻轻看着周围"
-    objects = "、".join(current_page.get("objects", []))
-    texts = "；".join(current_page.get("texts", []))
-    scene = current_page.get("scene") or "一个安静的地方"
-    mood = current_page.get("mood") or "温暖"
+    role_list = [str(r).strip() for r in current_page.get("roles", []) if str(r).strip()]
+    action_list = [str(a).strip() for a in current_page.get("actions", []) if str(a).strip()]
+    object_list = [str(o).strip() for o in current_page.get("objects", []) if str(o).strip()]
+    text_list = [str(t).strip() for t in current_page.get("texts", []) if str(t).strip()]
 
-    lines = [f"下面我用更适合{age}岁孩子的{style}语气，讲一讲这一页的小故事。"]
+    if role_list:
+        subject = f"????{'?'.join(role_list[:3])}"
+    else:
+        subject = "???????"
+
+    action_phrase = "?".join(action_list[:2]) if action_list else "?????????"
+    object_phrase = "?".join(object_list[:3])
+    text_phrase = "?".join(text_list[:3])
+
+    scene = str(current_page.get("scene") or "???????")
+    mood = str(current_page.get("mood") or "??")
+
+    joined_tokens = " ".join([scene, subject, object_phrase, text_phrase]).upper()
+    factual_mode = any(k in joined_tokens for k in ["PASSPORT", "ID", "???", "??", "??"])
+
+    lines: list[str] = []
+
     if recent_pages:
         previous = recent_pages[-1]
         if previous.get("scene") == scene:
-            lines.append(f"故事还在继续，画面里的小伙伴们还停留在{scene}。")
+            lines.append(f"???????????{scene}?")
         else:
-            lines.append(f"翻到这一页，故事来到了{scene}。")
+            lines.append(f"???????????{scene}?")
 
-    lines.append(f"这时候，{roles}正在{actions}，整个画面看起来有一点{mood}。")
+    if factual_mode:
+        lines.append(f"???????{subject}{action_phrase}?")
+    else:
+        lines.append(f"{subject}{action_phrase}??????{mood}????")
 
-    if objects:
-        lines.append(f"他们身边还能看到{objects}，这些小细节像是在悄悄提醒我们，接下来会发生新的事情。")
-    if texts:
-        lines.append(f"如果仔细看，页面上还有这些线索：{texts}。")
+    if object_phrase:
+        lines.append(f"????{object_phrase}?")
+    if text_phrase:
+        lines.append(f"????????{text_phrase}?")
 
     registry = build_character_registry([*recent_pages, current_page])
-    if len(registry) >= 2:
-        lines.append(f"到目前为止，故事里已经出现了{'、'.join(registry[:4])}这些角色。")
+    if len(registry) >= 2 and not factual_mode:
+        lines.append(f"?????????????{'?'.join(registry[:4])}?")
 
     if extra_prompt:
-        lines.append(f"如果特别留意的话，可以把重点放在：{extra_prompt}。")
+        lines.append(f"?????????????{extra_prompt}?")
 
     return "\n".join(lines)
 

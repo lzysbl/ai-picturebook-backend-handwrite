@@ -5,6 +5,7 @@ window.addEventListener("DOMContentLoaded", async () => {
   const captureBtn = document.getElementById("capture-frame");
   const video = document.getElementById("camera-video");
   const canvas = document.getElementById("camera-canvas");
+  const cameraStage = document.querySelector(".camera-stage");
   const emptyHint = document.getElementById("camera-empty");
   const guideBox = document.getElementById("camera-page-box");
   const guideBoxLabel = document.getElementById("camera-page-box-label");
@@ -30,6 +31,11 @@ window.addEventListener("DOMContentLoaded", async () => {
   const cameraTabs = Array.from(document.querySelectorAll("[data-camera-tab]"));
   const storyPanel = document.getElementById("camera-story-panel");
   const debugPanel = document.getElementById("camera-debug-panel");
+  const mobileResult = document.getElementById("camera-mobile-result");
+  const mobileMeta = document.getElementById("camera-mobile-meta");
+  const mobileStory = document.getElementById("camera-mobile-story");
+  const mobileToggleBtn = document.getElementById("camera-mobile-toggle");
+  const mobileOpenDetailBtn = document.getElementById("camera-mobile-open-detail");
 
   let stream = null;
   let isScanning = false;
@@ -58,6 +64,31 @@ window.addEventListener("DOMContentLoaded", async () => {
 
   function setStatus(text) {
     if (statusNode) statusNode.textContent = text;
+  }
+
+  function syncEmptyHintVisibility() {
+    if (!emptyHint) return;
+    const hasStream = Boolean(video?.srcObject || stream);
+    emptyHint.classList.toggle("hidden", hasStream);
+    cameraStage?.classList.toggle("is-live", hasStream);
+  }
+
+  function updateMobileResult(summary, story) {
+    if (!mobileResult || !mobileMeta || !mobileStory) return;
+    mobileMeta.textContent = summary || "Result updated";
+    const compact = String(story || "").split("\n").slice(0, 2).join("\n");
+    mobileStory.textContent = compact;
+    mobileResult.classList.remove("hidden");
+    if (window.matchMedia && window.matchMedia("(max-width: 900px)").matches) {
+      mobileResult.classList.add("expanded");
+      if (mobileToggleBtn) mobileToggleBtn.textContent = "Collapse";
+    }
+  }
+
+  function toggleMobileResult() {
+    if (!mobileResult || !mobileToggleBtn) return;
+    const expanded = mobileResult.classList.toggle("expanded");
+    mobileToggleBtn.textContent = expanded ? "Collapse" : "Expand";
   }
 
   function switchCameraTab(tabName) {
@@ -95,9 +126,27 @@ window.addEventListener("DOMContentLoaded", async () => {
 
   function buildGuidePageBox() {
     const videoAspect = (video.videoWidth || 3) / Math.max(1, video.videoHeight || 4);
-    const targetAspect = Math.min(1.02, Math.max(0.68, videoAspect * 0.78));
-    const guideHeight = 0.84;
-    const guideWidth = Math.min(0.82, guideHeight * targetAspect);
+
+    // Use a near-fullscreen guide box on mobile to avoid an overly narrow target area.
+    const marginX = 0.03;
+    const marginY = 0.04;
+    let guideWidth = 1 - marginX * 2;
+    let guideHeight = 1 - marginY * 2;
+
+    // Keep shape roughly page-like without shrinking too aggressively.
+    const aspect = guideWidth / Math.max(0.0001, guideHeight);
+    if (aspect < 0.55) {
+      guideWidth = Math.min(0.96, guideHeight * 0.65);
+    }
+    if (aspect > 1.15) {
+      guideHeight = Math.min(0.96, guideWidth / 1.05);
+    }
+
+    // Slight adjustment for very tall camera feeds.
+    if (videoAspect < 0.7) {
+      guideWidth = Math.min(guideWidth, 0.9);
+    }
+
     return {
       x: (1 - guideWidth) / 2,
       y: (1 - guideHeight) / 2,
@@ -195,7 +244,7 @@ window.addEventListener("DOMContentLoaded", async () => {
         audio: false,
       });
       video.srcObject = stream;
-      emptyHint?.classList.add("hidden");
+      syncEmptyHintVisibility();
       captureBtn.disabled = false;
       currentGuideBox = buildGuidePageBox();
       setGuideBox(currentGuideBox);
@@ -409,6 +458,21 @@ window.addEventListener("DOMContentLoaded", async () => {
     tab.addEventListener("click", () => switchCameraTab(tab.dataset.cameraTab || "story"));
   });
 
+  mobileToggleBtn?.addEventListener("click", toggleMobileResult);
+  mobileOpenDetailBtn?.addEventListener("click", () => {
+    const panel = document.querySelector(".camera-result-panel");
+    panel?.scrollIntoView({ behavior: "smooth", block: "start" });
+  });
+
+
+  video?.addEventListener("loadedmetadata", syncEmptyHintVisibility);
+  video?.addEventListener("playing", syncEmptyHintVisibility);
+  video?.addEventListener("pause", syncEmptyHintVisibility);
+  video?.addEventListener("emptied", () => {
+    if (emptyHint) emptyHint.classList.remove("hidden");
+    cameraStage?.classList.remove("is-live");
+  });
+
   window.addEventListener("beforeunload", () => {
     stopAutoScan();
     if (stream) {
@@ -417,4 +481,5 @@ window.addEventListener("DOMContentLoaded", async () => {
   });
 
   await ensureAuth();
+  syncEmptyHintVisibility();
 });
