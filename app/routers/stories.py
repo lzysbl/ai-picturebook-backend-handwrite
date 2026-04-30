@@ -25,6 +25,13 @@ from app.schemas.story import StoryEvaluateRequest, StoryGenerateData, StoryGene
 from app.services.book_service import get_book_by_id_and_user
 from app.services.eval_service import evaluate_story_full
 from app.services.image_service import list_book_images
+from app.services.live_story_service import (
+    build_character_registry as live_build_character_registry,
+    build_contextual_live_scan_story as live_build_contextual_live_scan_story,
+    context_pages_to_generation_input as live_context_pages_to_generation_input,
+    merge_scan_session_pages as live_merge_scan_session_pages,
+    summarize_page_for_live_story as live_summarize_page_for_live_story,
+)
 from app.services.story_generation_service import generate_story, generate_story_from_images
 from app.services.story_quality_cache_service import clear_story_quality_cache, get_story_quality_cache, set_story_quality_cache
 from app.services.story_service import (
@@ -133,34 +140,36 @@ def _build_contextual_live_scan_story(
     audience_age: str | None,
     extra_prompt: str | None,
 ) -> str:
-    style = _normalize_optional_text(narration_style, "温柔")
+    style = _normalize_optional_text(narration_style, "??")
     age = _normalize_optional_text(audience_age, "3-6")
-    roles = "、".join(current_page.get("roles", [])) or "小主角"
-    actions = "、".join(current_page.get("actions", [])) or "正在观察周围"
-    objects = "、".join(current_page.get("objects", []))
-    texts = "；".join(current_page.get("texts", []))
-    scene = current_page.get("scene") or "绘本场景"
-    mood = current_page.get("mood") or "温暖"
+    roles = "?".join(current_page.get("roles", [])) or "???"
+    actions = "?".join(current_page.get("actions", [])) or "???????"
+    objects = "?".join(current_page.get("objects", []))
+    texts = "?".join(current_page.get("texts", []))
+    scene = current_page.get("scene") or "???????"
+    mood = current_page.get("mood") or "??"
 
-    lines = [f"这是一个适合{age}岁儿童的{style}风格讲述。"]
+    lines = [f"???????{age}????{style}??????????????"]
     if recent_pages:
         previous = recent_pages[-1]
-        previous_roles = "、".join(previous.get("roles", [])) or "前一页的角色们"
         if previous.get("scene") == scene:
-            lines.append(f"延续前一页的场景，{previous_roles}这次仍然在{scene}里。")
+            lines.append(f"???????????????????{scene}?")
         else:
-            lines.append(f"和前一页相比，现在画面转到了{scene}。")
+            lines.append(f"???????????{scene}?")
 
-    lines.append(f"当前画面中，{roles}正在{actions}，整体氛围偏{mood}。")
-    registry = _build_character_registry([*recent_pages, current_page])
-    if registry:
-        lines.append(f"到目前为止，故事中已经出现的主要角色有：{'、'.join(registry)}。")
+    lines.append(f"????{roles}??{actions}???????????{mood}?")
+
     if objects:
-        lines.append(f"这一页还出现了这些关键元素：{objects}。")
+        lines.append(f"????????{objects}???????????????????????????")
     if texts:
-        lines.append(f"页面上可以看到的文字或线索有：{texts}。")
+        lines.append(f"????????????????{texts}?")
+
+    registry = _build_character_registry([*recent_pages, current_page])
+    if len(registry) >= 2:
+        lines.append(f"??????????????{'?'.join(registry[:4])}?????")
+
     if extra_prompt:
-        lines.append(f"补充提示：{extra_prompt}。")
+        lines.append(f"?????????????????{extra_prompt}?")
     return "\n".join(lines)
 
 
@@ -707,7 +716,7 @@ async def scan_story_page_api(
             crop_mode = "full_frame"
         prepared_path = _enhance_scan_image(scan_path)
         analysis_result = await analyze_images([str(prepared_path)])
-        current_page = _page_summary_from_analysis(analysis_result)
+        current_page = live_summarize_page_for_live_story(analysis_result)
         recent_pages: list[dict[str, Any]] = []
         character_registry = current_page.get("roles", [])
         session_page_count = 1
@@ -724,7 +733,7 @@ async def scan_story_page_api(
 
         if normalized_mode == "full":
             generation_input = (
-                _context_pages_to_generation_input(recent_pages, current_page)
+                live_context_pages_to_generation_input(recent_pages, current_page)
                 if recent_pages
                 else analysis_result
             )
@@ -738,7 +747,7 @@ async def scan_story_page_api(
                 fallback_title="实时扫描绘本",
             )
         else:
-            story_content = _build_contextual_live_scan_story(
+            story_content = live_build_contextual_live_scan_story(
                 recent_pages=recent_pages,
                 current_page=current_page,
                 narration_style=normalized_style,
@@ -747,8 +756,8 @@ async def scan_story_page_api(
             )
 
         if normalized_session_id:
-            merged_pages = _merge_scan_session_pages(recent_pages, current_page)
-            character_registry = _build_character_registry(merged_pages)
+            merged_pages = live_merge_scan_session_pages(recent_pages, current_page)
+            character_registry = live_build_character_registry(merged_pages)
             session_page_count = len(merged_pages)
             await _set_scan_session(
                 session_key,
@@ -758,7 +767,7 @@ async def scan_story_page_api(
                 },
             )
         else:
-            character_registry = _build_character_registry([current_page])
+            character_registry = live_build_character_registry([current_page])
 
         quality = await evaluate_story_full(
             analysis_result=analysis_result,

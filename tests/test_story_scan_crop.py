@@ -2,9 +2,14 @@
 
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 
 from PIL import Image
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
 
 from app.routers.stories import _enhance_scan_image, _normalize_crop_box, _scan_cache_key
 

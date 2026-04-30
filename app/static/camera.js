@@ -27,6 +27,9 @@ window.addEventListener("DOMContentLoaded", async () => {
   const qualityPanel = document.getElementById("camera-quality-panel");
   const qualitySummary = document.getElementById("camera-quality-summary");
   const analysisOutput = document.getElementById("camera-analysis-output");
+  const cameraTabs = Array.from(document.querySelectorAll("[data-camera-tab]"));
+  const storyPanel = document.getElementById("camera-story-panel");
+  const debugPanel = document.getElementById("camera-debug-panel");
 
   let stream = null;
   let isScanning = false;
@@ -55,6 +58,14 @@ window.addEventListener("DOMContentLoaded", async () => {
 
   function setStatus(text) {
     if (statusNode) statusNode.textContent = text;
+  }
+
+  function switchCameraTab(tabName) {
+    cameraTabs.forEach((tab) => {
+      tab.classList.toggle("active", tab.dataset.cameraTab === tabName);
+    });
+    storyPanel?.classList.toggle("active", tabName === "story");
+    debugPanel?.classList.toggle("active", tabName === "debug");
   }
 
   function updateStateBadges({ pageState, stabilityText, signatureText } = {}) {
@@ -394,6 +405,9 @@ window.addEventListener("DOMContentLoaded", async () => {
   captureBtn?.addEventListener("click", () => scanCurrentFrame({ automatic: false }));
   autoScanSelect?.addEventListener("change", restartAutoScanIfNeeded);
   intervalSelect?.addEventListener("change", restartAutoScanIfNeeded);
+  cameraTabs.forEach((tab) => {
+    tab.addEventListener("click", () => switchCameraTab(tab.dataset.cameraTab || "story"));
+  });
 
   window.addEventListener("beforeunload", () => {
     stopAutoScan();

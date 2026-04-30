@@ -1190,6 +1190,14 @@ a {
   gap: 16px;
 }
 
+.camera-layout-mobile-first {
+  align-items: start;
+}
+
+.camera-main-panel {
+  position: relative;
+}
+
 .camera-header-row {
   display: flex;
   align-items: center;
@@ -1200,6 +1208,12 @@ a {
 .camera-actions {
   display: flex;
   gap: 10px;
+}
+
+.camera-actions-primary {
+  margin-top: 14px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
 }
 
 .camera-stage {
@@ -1275,8 +1289,47 @@ a {
   margin-top: 14px;
 }
 
+.camera-settings {
+  margin-top: 14px;
+  padding: 0;
+  overflow: hidden;
+}
+
+.camera-settings summary {
+  list-style: none;
+  cursor: pointer;
+  padding: 14px 16px;
+  font-weight: 700;
+  color: var(--text);
+  background: rgba(245, 251, 255, 0.8);
+}
+
+.camera-settings summary::-webkit-details-marker {
+  display: none;
+}
+
+.camera-settings[open] summary {
+  border-bottom: 1px solid var(--border);
+}
+
+.camera-settings .camera-toolbar {
+  padding: 14px 16px 16px;
+  margin-top: 0;
+}
+
 .camera-result-panel {
   min-height: 620px;
+}
+
+.camera-result-header {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+.camera-detail-tabs {
+  margin-top: 0;
 }
 
 .camera-metrics {
@@ -1372,6 +1425,19 @@ a {
 
   .camera-toolbar {
     grid-template-columns: 1fr;
+  }
+
+  .camera-actions-primary {
+    grid-template-columns: 1fr;
+  }
+
+  .camera-stage {
+    min-height: 420px;
+  }
+
+  .camera-video {
+    min-height: 420px;
+    max-height: 72vh;
   }
 
   .history-panel .list,
