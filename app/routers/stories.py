@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+import logging
 import tempfile
 import uuid
 from pathlib import Path
@@ -51,6 +52,7 @@ from app.services.vision_analysis_service import analyze_images
 from app.utils.rate_limiter import enforce_rate_limit
 
 router = APIRouter(prefix="/api/stories", tags=["Stories"])
+logger = logging.getLogger(__name__)
 
 SCAN_CACHE_TTL_SECONDS = 120
 SCAN_SESSION_TTL_SECONDS = 900
@@ -60,6 +62,10 @@ try:
     import cv2  # type: ignore
 except Exception:  # noqa: BLE001
     cv2 = None
+
+
+def _elapsed_ms(started_at: float) -> int:
+    return max(0, int((time() - started_at) * 1000))
 
 
 def _normalize_judge_samples(include_judge: bool, judge_samples: int | None) -> int | None:
@@ -717,7 +723,9 @@ async def scan_story_page_api(
     judge_samples: int | None = Form(default=None),
     current_user=Depends(get_current_user),
 ) -> ApiResponse:
+    total_started_at = time()
     image_bytes = await image.read()
+    read_ms = _elapsed_ms(total_started_at)
     suffix = Path(image.filename or "frame.jpg").suffix or ".jpg"
     normalized_session_id = (session_id or "").strip()
     normalized_prompt = _normalize_optional_text(prompt)
@@ -739,18 +747,48 @@ async def scan_story_page_api(
     )
     cached = await _get_scan_cache(cache_key)
     if cached is not None:
-        return ApiResponse(success=True, message="实时识别完成（缓存）", data=cached)
+        cached_timing = dict(cached.get("timing") or {})
+        cached_timing.update(
+            {
+                "cache_hit": True,
+                "cache_lookup_ms": _elapsed_ms(total_started_at),
+                "total_ms": _elapsed_ms(total_started_at),
+            }
+        )
+        cached_payload = {**cached, "timing": cached_timing}
+        logger.info(
+            "scan.timing mode=%s cache_hit=true crop_mode=%s total_ms=%s user_id=%s session=%s",
+            cached_payload.get("response_mode", normalized_mode),
+            cached_payload.get("crop_mode", "-"),
+            cached_timing["total_ms"],
+            current_user.id,
+            normalized_session_id or "-",
+        )
+        return ApiResponse(success=True, message="实时识别完成（缓存）", data=cached_payload)
 
     tmp_path: Path | None = None
     scan_path: Path | None = None
     prepared_path: Path | None = None
     crop_mode = "full_frame"
     effective_crop_box = normalized_crop_box
+    temp_write_ms = 0
+    page_detect_ms = 0
+    crop_ms = 0
+    enhance_ms = 0
+    analysis_ms = 0
+    page_summary_ms = 0
+    session_load_ms = 0
+    story_ms = 0
+    session_save_ms = 0
+    quality_ms = 0
     try:
+        stage_started_at = time()
         with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
             tmp.write(image_bytes)
             tmp_path = Path(tmp.name)
+        temp_write_ms = _elapsed_ms(stage_started_at)
 
+        stage_started_at = time()
         if normalized_crop_source != "detected":
             opencv_crop_box = _detect_page_box_with_opencv(tmp_path)
             if opencv_crop_box is not None:
@@ -760,19 +798,29 @@ async def scan_story_page_api(
                 crop_mode = "guide_crop"
         else:
             crop_mode = "frontend_crop"
+        page_detect_ms = _elapsed_ms(stage_started_at)
 
+        stage_started_at = time()
         scan_path, crop_result_mode = _crop_image_to_temp(tmp_path, effective_crop_box)
         if crop_result_mode == "full_frame":
             crop_mode = "full_frame"
+        crop_ms = _elapsed_ms(stage_started_at)
+        stage_started_at = time()
         prepared_path = _enhance_scan_image(scan_path)
+        enhance_ms = _elapsed_ms(stage_started_at)
+        stage_started_at = time()
         analysis_result = await analyze_images([str(prepared_path)])
+        analysis_ms = _elapsed_ms(stage_started_at)
+        stage_started_at = time()
         current_page = live_summarize_page_for_live_story(analysis_result)
+        page_summary_ms = _elapsed_ms(stage_started_at)
         recent_pages: list[dict[str, Any]] = []
         character_registry = current_page.get("roles", [])
         session_page_count = 1
         session_key = ""
 
         if normalized_session_id:
+            stage_started_at = time()
             session_key = _scan_session_key(current_user.id, normalized_session_id)
             session_payload = await _get_scan_session(session_key) or {}
             recent_pages = (
@@ -780,7 +828,9 @@ async def scan_story_page_api(
                 if isinstance(session_payload.get("recent_pages", []), list)
                 else []
             )
+            session_load_ms = _elapsed_ms(stage_started_at)
 
+        stage_started_at = time()
         if normalized_mode == "full":
             generation_input = (
                 live_context_pages_to_generation_input(recent_pages, current_page)
@@ -804,8 +854,10 @@ async def scan_story_page_api(
                 audience_age=normalized_age,
                 extra_prompt=normalized_prompt,
             )
+        story_ms = _elapsed_ms(stage_started_at)
 
         if normalized_session_id:
+            stage_started_at = time()
             merged_pages = live_merge_scan_session_pages(recent_pages, current_page)
             character_registry = live_build_character_registry(merged_pages)
             session_page_count = len(merged_pages)
@@ -816,15 +868,18 @@ async def scan_story_page_api(
                     "character_registry": character_registry,
                 },
             )
+            session_save_ms = _elapsed_ms(stage_started_at)
         else:
             character_registry = live_build_character_registry([current_page])
 
+        stage_started_at = time()
         quality = await evaluate_story_full(
             analysis_result=analysis_result,
             story_content=story_content,
             include_judge=include_judge,
             judge_samples=judge_samples,
         )
+        quality_ms = _elapsed_ms(stage_started_at)
     finally:
         if prepared_path and prepared_path.exists():
             prepared_path.unlink(missing_ok=True)
@@ -833,6 +888,45 @@ async def scan_story_page_api(
         if tmp_path and tmp_path.exists():
             tmp_path.unlink(missing_ok=True)
 
+    total_ms = _elapsed_ms(total_started_at)
+    timing = {
+        "cache_hit": False,
+        "response_mode": normalized_mode,
+        "crop_mode": crop_mode,
+        "read_ms": read_ms,
+        "temp_write_ms": temp_write_ms,
+        "page_detect_ms": page_detect_ms,
+        "crop_ms": crop_ms,
+        "enhance_ms": enhance_ms,
+        "analysis_ms": analysis_ms,
+        "page_summary_ms": page_summary_ms,
+        "session_load_ms": session_load_ms,
+        "story_ms": story_ms,
+        "session_save_ms": session_save_ms,
+        "quality_ms": quality_ms,
+        "total_ms": total_ms,
+    }
+    logger.info(
+        (
+            "scan.timing mode=%s cache_hit=false crop_mode=%s total_ms=%s "
+            "analysis_ms=%s story_ms=%s quality_ms=%s page_detect_ms=%s crop_ms=%s "
+            "enhance_ms=%s session_load_ms=%s session_save_ms=%s user_id=%s session=%s"
+        ),
+        normalized_mode,
+        crop_mode,
+        total_ms,
+        analysis_ms,
+        story_ms,
+        quality_ms,
+        page_detect_ms,
+        crop_ms,
+        enhance_ms,
+        session_load_ms,
+        session_save_ms,
+        current_user.id,
+        normalized_session_id or "-",
+    )
+
     payload = {
         "analysis_result": analysis_result,
         "story_content": story_content,
@@ -840,6 +934,7 @@ async def scan_story_page_api(
         "response_mode": normalized_mode,
         "crop_mode": crop_mode,
         "crop_box": effective_crop_box,
+        "timing": timing,
         "context": {
             "session_id": normalized_session_id or None,
             "recent_page_count": session_page_count,
@@ -856,6 +951,7 @@ async def story_tts_api(
     request: Request,
     current_user=Depends(get_current_user),
 ) -> ApiResponse:
+    total_started_at = time()
     await enforce_rate_limit(
         request=request,
         action="stories:tts",
@@ -872,6 +968,15 @@ async def story_tts_api(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except RuntimeError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    total_ms = _elapsed_ms(total_started_at)
+    logger.info(
+        "tts.timing provider=%s total_ms=%s text_chars=%s voice=%s user_id=%s",
+        result.provider,
+        total_ms,
+        result.text_chars,
+        result.voice_preset or "-",
+        current_user.id,
+    )
     return ApiResponse(
         success=True,
         message="朗读音频生成成功",
@@ -882,6 +987,10 @@ async def story_tts_api(
             "duration_seconds": result.duration_seconds,
             "text_chars": result.text_chars,
             "voice_preset": result.voice_preset,
+            "timing": {
+                "provider": result.provider,
+                "total_ms": total_ms,
+            },
         },
     )
 

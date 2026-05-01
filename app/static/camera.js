@@ -38,6 +38,7 @@ window.addEventListener("DOMContentLoaded", async () => {
   const mobileStory = document.getElementById("camera-mobile-story");
   const mobileToggleBtn = document.getElementById("camera-mobile-toggle");
   const mobileOpenDetailBtn = document.getElementById("camera-mobile-open-detail");
+  const mobileTtsBtn = document.getElementById("camera-mobile-tts");
 
   let stream = null;
   let isScanning = false;
@@ -79,11 +80,12 @@ window.addEventListener("DOMContentLoaded", async () => {
   function updateMobileResult(summary, story) {
     if (!mobileResult || !mobileMeta || !mobileStory) return;
     mobileMeta.textContent = summary || "识别结果";
-    const compact = String(story || "").split("\n").slice(0, 3).join("\n");
+    const compact = String(story || "").split("\n").slice(0, 5).join("\n");
     mobileStory.textContent = compact;
     mobileResult.classList.remove("hidden");
+    if (mobileTtsBtn) mobileTtsBtn.disabled = !String(story || "").trim();
     if (window.matchMedia && window.matchMedia("(max-width: 900px)").matches) {
-      mobileResult.classList.add("expanded");
+      mobileResult.classList.add("expanded", "has-result");
       if (mobileToggleBtn) mobileToggleBtn.textContent = "收起";
     }
   }
@@ -100,6 +102,15 @@ window.addEventListener("DOMContentLoaded", async () => {
     });
     storyPanel?.classList.toggle("active", tabName === "story");
     debugPanel?.classList.toggle("active", tabName === "debug");
+  }
+
+  function toggleMobileDetailPanel(forceOpen = null) {
+    const panel = document.querySelector(".camera-result-panel");
+    if (!panel) return;
+    const shouldOpen = forceOpen === null ? !panel.classList.contains("mobile-open") : Boolean(forceOpen);
+    panel.classList.toggle("mobile-open", shouldOpen);
+    if (mobileOpenDetailBtn) mobileOpenDetailBtn.textContent = shouldOpen ? "关闭详情" : "详情";
+    if (shouldOpen) switchCameraTab("story");
   }
 
   function updateStateBadges({ pageState, stabilityText, signatureText } = {}) {
@@ -182,6 +193,7 @@ window.addEventListener("DOMContentLoaded", async () => {
     const analysisResult = Array.isArray(result?.analysis_result) ? result.analysis_result : [];
     const first = analysisResult[0] || {};
     const quality = result?.quality || null;
+    const timing = result?.timing || null;
     const cropMode = result?.crop_mode || "full_frame";
     const cropBox = result?.crop_box && typeof result.crop_box === "object" ? result.crop_box : null;
 
@@ -202,6 +214,7 @@ window.addEventListener("DOMContentLoaded", async () => {
     latestStoryText = String(result?.story_content || "");
     storyOutput.textContent = latestStoryText || "未返回讲述文本";
     if (ttsPlayBtn) ttsPlayBtn.disabled = !latestStoryText;
+    if (mobileTtsBtn) mobileTtsBtn.disabled = !latestStoryText;
     resultMeta.textContent = `识别完成：角色 ${Array.isArray(first["角色"]) ? first["角色"].join("、") || "未识别" : "未识别"} | 场景 ${first["场景"] || "未识别"}`;
 
     updateMobileResult("识别结果已更新", latestStoryText);
@@ -219,8 +232,11 @@ window.addEventListener("DOMContentLoaded", async () => {
               ? "前端框裁剪"
               : "整图回退";
       qualitySummary.textContent =
-        `${modeText} | ${cropText} | 整体 ${paper.overall ?? "-"} | 连贯 ${paper.coherence ?? "-"} | 适龄 ${paper.age_appropriateness ?? "-"} | 页面覆盖率 ${paper.page_coverage_ratio ?? "-"}`;
+        `${modeText} | ${cropText} | 总耗时 ${timing?.total_ms ?? "-"}ms | 识别 ${timing?.analysis_ms ?? "-"}ms | 讲述 ${timing?.story_ms ?? "-"}ms | 评估 ${timing?.quality_ms ?? "-"}ms | 整体 ${paper.overall ?? "-"} | 连贯 ${paper.coherence ?? "-"} | 适龄 ${paper.age_appropriateness ?? "-"} | 页面覆盖率 ${paper.page_coverage_ratio ?? "-"}`;
       analysisOutput.textContent = JSON.stringify(analysisResult, null, 2);
+      if (timing) {
+        analysisOutput.textContent = `${JSON.stringify({ timing }, null, 2)}\n\n${JSON.stringify(analysisResult, null, 2)}`;
+      }
     } else {
       qualityPanel.classList.add("hidden");
       qualitySummary.textContent = "";
@@ -249,7 +265,8 @@ window.addEventListener("DOMContentLoaded", async () => {
       ttsAudio.src = audioUrl;
       ttsAudio.classList.remove("hidden");
       await ttsAudio.play();
-      showToast("开始朗读");
+      const timingText = data?.timing?.total_ms ? `，耗时 ${data.timing.total_ms}ms` : "";
+      showToast(`开始朗读${timingText}`);
     } catch (error) {
       showToast(error.message || "朗读失败");
     } finally {
@@ -487,10 +504,9 @@ window.addEventListener("DOMContentLoaded", async () => {
 
   mobileToggleBtn?.addEventListener("click", toggleMobileResult);
   mobileOpenDetailBtn?.addEventListener("click", () => {
-    const panel = document.querySelector(".camera-result-panel");
-    panel?.classList.toggle("mobile-open");
-    panel?.scrollIntoView({ behavior: "smooth", block: "center" });
+    toggleMobileDetailPanel();
   });
+  mobileTtsBtn?.addEventListener("click", playStoryTTS);
 
   video?.addEventListener("loadedmetadata", syncEmptyHintVisibility);
   video?.addEventListener("playing", syncEmptyHintVisibility);
