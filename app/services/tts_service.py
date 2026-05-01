@@ -30,6 +30,9 @@ class TTSResult:
     sample_rate: int
     duration_seconds: float
     text_chars: int
+    original_text_chars: int
+    truncated: bool
+    segment_count: int
     voice_preset: str | None
 
 
@@ -140,6 +143,44 @@ def _prepare_story_reading_text(text: str) -> str:
     return "\n".join(sentence.strip() for sentence in sentences if sentence.strip())
 
 
+def _split_tts_segments(text: str, max_chars: int) -> list[str]:
+    text = text.strip()
+    if not text:
+        return []
+    if max_chars <= 0:
+        return [text]
+
+    segments: list[str] = []
+    current: list[str] = []
+    total = 0
+    for line in text.splitlines():
+        candidate = line.strip()
+        if not candidate:
+            continue
+        if len(candidate) > max_chars:
+            if current:
+                segments.append("\n".join(current))
+                current = []
+                total = 0
+            for index in range(0, len(candidate), max_chars):
+                segments.append(candidate[index : index + max_chars])
+            continue
+
+        next_total = total + len(candidate) + (1 if current else 0)
+        if next_total <= max_chars:
+            current.append(candidate)
+            total = next_total
+            continue
+        if current:
+            segments.append("\n".join(current))
+        current = [candidate]
+        total = len(candidate)
+
+    if current:
+        segments.append("\n".join(current))
+    return [segment.strip() for segment in segments if segment.strip()]
+
+
 def _resolve_wav_stats(path: Path) -> tuple[int, int]:
     with wave.open(str(path), "rb") as wf:
         return int(wf.getframerate()), int(wf.getnframes())
@@ -151,14 +192,12 @@ def _resolve_wav_stats_from_bytes(content: bytes) -> tuple[int, int]:
             return int(wf.getframerate()), int(wf.getnframes())
 
 
-async def _synthesize_with_edge(text: str, voice_preset: str | None) -> tuple[bytes, int, float, str | None]:
+async def _synthesize_edge_segment(text: str, voice: str) -> bytes:
     try:
         import edge_tts  # type: ignore
     except Exception as exc:  # noqa: BLE001
         raise RuntimeError("edge-tts is not installed, run: pip install edge-tts") from exc
 
-    text = _prepare_story_reading_text(text)
-    voice = (voice_preset or settings.edge_tts_voice or "zh-CN-XiaoxiaoNeural").strip()
     communicate = edge_tts.Communicate(
         text=text,
         voice=voice,
@@ -173,7 +212,16 @@ async def _synthesize_with_edge(text: str, voice_preset: str | None) -> tuple[by
     if not audio:
         raise RuntimeError("Edge TTS produced empty audio")
 
-    return bytes(audio), 24000, 0.0, voice
+    return bytes(audio)
+
+
+async def _synthesize_with_edge_segments(segments: list[str], voice_preset: str | None) -> tuple[bytes, int, float, str | None]:
+    voice = (voice_preset or settings.edge_tts_voice or "zh-CN-XiaoxiaoNeural").strip()
+    audio_parts: list[bytes] = []
+    for index, segment in enumerate(segments, start=1):
+        logger.info("tts.edge_generate segment=%s/%s chars=%s voice=%s", index, len(segments), len(segment), voice)
+        audio_parts.append(await _synthesize_edge_segment(segment, voice))
+    return b"".join(audio_parts), 24000, 0.0, voice
 
 
 def _synthesize_with_piper(text: str, voice_preset: str | None) -> tuple[bytes, int, float, str | None]:
@@ -260,6 +308,47 @@ def _synthesize_with_piper(text: str, voice_preset: str | None) -> tuple[bytes, 
     return wav_bytes, sample_rate, duration, voice_preset
 
 
+def _merge_wav_bytes(parts: list[bytes]) -> tuple[bytes, int, float]:
+    if not parts:
+        raise RuntimeError("No WAV audio segments to merge")
+
+    params = None
+    frames: list[bytes] = []
+    frame_count = 0
+    sample_rate = 0
+    for content in parts:
+        with io.BytesIO(content) as buf:
+            with wave.open(buf, "rb") as wf:
+                current_params = wf.getparams()
+                if params is None:
+                    params = current_params
+                    sample_rate = int(wf.getframerate())
+                elif current_params[:3] != params[:3]:
+                    raise RuntimeError("Piper generated incompatible WAV segments")
+                data = wf.readframes(wf.getnframes())
+                frames.append(data)
+                frame_count += int(wf.getnframes())
+
+    with io.BytesIO() as out:
+        with wave.open(out, "wb") as wf:
+            wf.setparams(params)
+            wf.writeframes(b"".join(frames))
+        merged = out.getvalue()
+    duration = round((frame_count / float(sample_rate)) if sample_rate > 0 else 0.0, 2)
+    return merged, sample_rate, duration
+
+
+def _synthesize_with_piper_segments(segments: list[str], voice_preset: str | None) -> tuple[bytes, int, float, str | None]:
+    wav_parts: list[bytes] = []
+    selected_voice: str | None = voice_preset
+    for index, segment in enumerate(segments, start=1):
+        logger.info("tts.piper_segment segment=%s/%s chars=%s", index, len(segments), len(segment))
+        wav_bytes, _, _, selected_voice = _synthesize_with_piper(segment, voice_preset)
+        wav_parts.append(wav_bytes)
+    merged, sample_rate, duration = _merge_wav_bytes(wav_parts)
+    return merged, sample_rate, duration, selected_voice
+
+
 async def synthesize_text_to_speech(
     *,
     text: str,
@@ -268,20 +357,22 @@ async def synthesize_text_to_speech(
     clean_text = _prepare_story_reading_text(text)
     if not clean_text:
         raise ValueError("Text cannot be empty")
-    if len(clean_text) > settings.tts_max_chars:
-        raise ValueError(f"Text too long, max {settings.tts_max_chars} chars")
+    original_text_chars = len(clean_text)
+    segments = _split_tts_segments(clean_text, settings.tts_max_chars)
+    if not segments:
+        raise ValueError("Text cannot be empty")
 
     provider = _resolve_provider()
     if provider == "edge":
-        audio_bytes, sample_rate, duration_seconds, selected_voice = await _synthesize_with_edge(
-            clean_text,
+        audio_bytes, sample_rate, duration_seconds, selected_voice = await _synthesize_with_edge_segments(
+            segments,
             voice_preset,
         )
         file_path, file_url = _save_audio_file(audio_bytes, suffix=".mp3")
     else:
         wav_bytes, sample_rate, duration_seconds, selected_voice = await asyncio.to_thread(
-            _synthesize_with_piper,
-            clean_text,
+            _synthesize_with_piper_segments,
+            segments,
             voice_preset,
         )
 
@@ -296,6 +387,9 @@ async def synthesize_text_to_speech(
         provider=provider,
         sample_rate=sample_rate,
         duration_seconds=duration_seconds,
-        text_chars=len(clean_text),
+        text_chars=sum(len(segment) for segment in segments),
+        original_text_chars=original_text_chars,
+        truncated=False,
+        segment_count=len(segments),
         voice_preset=selected_voice,
     )

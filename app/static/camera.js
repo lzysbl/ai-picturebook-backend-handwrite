@@ -266,7 +266,8 @@ window.addEventListener("DOMContentLoaded", async () => {
       ttsAudio.classList.remove("hidden");
       await ttsAudio.play();
       const timingText = data?.timing?.total_ms ? `，耗时 ${data.timing.total_ms}ms` : "";
-      showToast(`开始朗读${timingText}`);
+      const segmentText = Number(data?.segment_count || 1) > 1 ? `，已分 ${data.segment_count} 段合成` : "";
+      showToast(`开始朗读${timingText}${segmentText}`);
     } catch (error) {
       showToast(error.message || "朗读失败");
     } finally {

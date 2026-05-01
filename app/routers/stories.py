@@ -970,10 +970,13 @@ async def story_tts_api(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     total_ms = _elapsed_ms(total_started_at)
     logger.info(
-        "tts.timing provider=%s total_ms=%s text_chars=%s voice=%s user_id=%s",
+        "tts.timing provider=%s total_ms=%s text_chars=%s original_text_chars=%s segment_count=%s truncated=%s voice=%s user_id=%s",
         result.provider,
         total_ms,
         result.text_chars,
+        result.original_text_chars,
+        result.segment_count,
+        result.truncated,
         result.voice_preset or "-",
         current_user.id,
     )
@@ -986,6 +989,9 @@ async def story_tts_api(
             "sample_rate": result.sample_rate,
             "duration_seconds": result.duration_seconds,
             "text_chars": result.text_chars,
+            "original_text_chars": result.original_text_chars,
+            "truncated": result.truncated,
+            "segment_count": result.segment_count,
             "voice_preset": result.voice_preset,
             "timing": {
                 "provider": result.provider,
