@@ -1,282 +1,493 @@
-# AI 绘本故事生成系统（毕业设计项目）
+# 面向移动端连续翻页场景的端云协同绘本视觉理解与低时延智能讲述系统
 
-一个基于 FastAPI 的多模态绘本系统，支持：
-- 用户注册、登录、找回与重置密码
-- 绘本创建/删除、图片上传与分页管理
-- 绘本故事生成（同步/异步任务）
-- 实时识别（手机浏览器调用摄像头）与连续讲述
-- 质量评估（规则指标 + 可选 LLM Judge）
-- 论文导出脚本（JSON/CSV）
+这是一个面向真实亲子共读场景的 AI 绘本实时识别与智能讲述系统。系统不再只是“上传图片后生成故事”，而是通过手机浏览器直接调用摄像头，持续观察绘本页面，在页面稳定后自动识别当前页，并结合前序页面上下文生成适龄、连贯、可朗读的讲述文本。
+
+项目适合作为毕业设计展示：可以现场用手机对准实体绘本，完成“翻页即识别、识别后讲述、讲述可朗读、时延可统计”的完整闭环。
 
 ---
 
-## 1. 技术栈
+## 核心能力
 
-- Python 3.11
-- FastAPI + Uvicorn
-- SQLAlchemy Async + Pydantic
-- MySQL / SQLite
-- Redis（可选但推荐，任务与缓存）
-- Pillow + OpenCV（页框检测与图像预处理）
+- 移动端摄像头实时取景：手机浏览器访问 `/ui/camera` 即可调用摄像头。
+- 页面稳定检测：只有画面签名和引导框稳定后才触发自动扫描，减少翻页中间态误识别。
+- 页框裁剪与图像增强：前端引导框 + 后端 OpenCV 页框检测 + 裁剪增强，降低背景干扰。
+- OCR/VLM 页面理解：提取角色、场景、动作、情绪、关键物体、画面文字等结构化信息。
+- 连续翻页上下文：通过 `session_id` 维护最近页面摘要和角色表，支持跨页连贯讲述。
+- 快速响应与完整生成：快速模式低时延返回页级讲述，完整模式调用故事生成模型生成更丰富文本。
+- Edge TTS 朗读：识别结果可一键生成 mp3 并在浏览器播放。
+- 手机端适配：摄像头优先显示，识别结果以底部故事抽屉呈现，方便边拍边看/听。
+- 时延统计：接口返回并记录识别、讲述、评估、裁剪、TTS 等阶段耗时，便于论文汇报。
+- 用户与绘本管理：支持注册登录、绘本管理、图片上传、故事生成、历史记录和质量评估。
 
 ---
 
-## 2. 项目结构
+## 技术栈
+
+- 后端：Python 3.11、FastAPI、Uvicorn、Pydantic、SQLAlchemy Async
+- 数据库：SQLite / MySQL 8.0
+- 缓存：Redis，用于缓存、任务进度、限流与扫描会话
+- 图像处理：Pillow、OpenCV Headless
+- 多模态理解：Qwen VL 兼容接口，支持 mock 模式
+- 语音合成：Edge TTS，Piper 作为离线备用方案
+- 前端：原生 HTML/CSS/JavaScript，适配桌面与手机浏览器
+- 部署：Docker、Docker Compose v2
+
+---
+
+## 系统流程
+
+```text
+手机浏览器摄像头
+  -> 前端取景与稳定检测
+  -> 上传关键帧和引导框坐标
+  -> 后端 OpenCV 页框检测
+  -> 裁剪 / 增强 / 整图兜底
+  -> 多模态页面理解
+  -> 页级摘要与会话记忆
+  -> 快速讲述或完整生成
+  -> 前端展示 / Edge TTS 朗读
+  -> 日志记录阶段耗时
+```
+
+当前裁剪优先级：
+
+```text
+后端 OpenCV 检测页框 > 前端引导框 > 整图识别兜底
+```
+
+---
+
+## 响应模式
+
+### 快速响应
+
+快速响应是实时识别的默认模式。它只调用一次视觉理解模型，得到页面结构化信息后，由后端本地规则快速生成短讲述。
+
+特点：
+
+- 延迟低，适合手机连续翻页。
+- 讲述稳定，不额外调用故事生成大模型。
+- 文本更像“当前页讲述提示”，不会过度扩写。
+
+核心路径：
+
+```text
+analyze_images
+  -> summarize_page_for_live_story
+  -> build_contextual_live_scan_story
+```
+
+### 完整生成
+
+完整生成会在页面理解后，再调用故事生成模型生成更完整的讲述文本。
+
+特点：
+
+- 文本更丰富，更像完整故事段落。
+- 延迟更高，适合单页展示或最终生成。
+- 可结合最近页面上下文进行连续表达。
+
+---
+
+## 项目结构
 
 ```text
 app/
   core/        配置、日志、Redis、请求上下文
-  db/          会话与建表初始化
+  db/          数据库会话与初始化
   models/      ORM 模型
   routers/     API 路由
-  schemas/     请求/响应模型
-  services/    业务逻辑（生成、评估、实时识别等）
-  static/      前端页面与脚本（含 camera）
-  main.py      应用入口
+  schemas/     请求与响应模型
+  services/    AI 分析、故事生成、实时讲述、TTS、评估等服务
+  static/      前端页面、样式和脚本
+  main.py      FastAPI 应用入口
 
-scripts/       论文评估导出等脚本
-tests/         自动化测试
-uploads/       上传目录
-logs/          日志目录
+scripts/
+  download_piper_model.py
+  export_story_quality_report.py
+
+uploads/       上传图片与运行时音频输出
+logs/          应用日志
+models/piper/  Piper 离线模型目录，不提交 Git
 ```
 
 ---
 
-## 3. 快速开始（本地）
+## 本地运行
 
-### 3.1 安装依赖
+### 1. 创建环境并安装依赖
 
-```bash
+```powershell
 pip install -r requirements.txt
 ```
 
-### 3.2 配置环境变量
+如果使用 Edge TTS，确保依赖已安装：
 
-```bash
-cp .env.example .env
+```powershell
+pip install edge-tts
 ```
 
-至少修改：
-- `SECRET_KEY`
-- `AI_PROVIDER`（`mock` 或 `qwen`）
-- 若用 qwen：`QWEN_API_KEY`
+### 2. 准备环境变量
 
-### 3.3 启动服务
+```powershell
+copy .env.example .env
+```
 
-```bash
+最小本地配置可以使用 SQLite 和 mock 模式：
+
+```env
+DATABASE_URL=sqlite+aiosqlite:///./ai_story.db
+AI_PROVIDER=mock
+REDIS_ENABLED=false
+TTS_PROVIDER=edge
+EDGE_TTS_VOICE=zh-CN-XiaoxiaoNeural
+EDGE_TTS_RATE=-5%
+EDGE_TTS_VOLUME=+0%
+```
+
+使用 Qwen 视觉模型时配置：
+
+```env
+AI_PROVIDER=qwen
+QWEN_MODEL=qwen3.6-flash
+QWEN_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
+QWEN_API_KEY=你的API_KEY
+```
+
+### 3. 启动服务
+
+```powershell
 uvicorn app.main:app --reload --port 8001
 ```
 
-访问地址：
+访问：
+
 - 登录页：`http://127.0.0.1:8001/ui/login`
 - 实时识别：`http://127.0.0.1:8001/ui/camera`
-- Swagger：`http://127.0.0.1:8001/docs`
+- 接口文档：`http://127.0.0.1:8001/docs`
 - 健康检查：`http://127.0.0.1:8001/health`
 
 ---
 
-## 4. Docker 部署（推荐）
+## Docker 部署
 
-项目提供：
-- `Dockerfile`
-- `docker-compose.yml`
+项目提供 `Dockerfile` 和 `docker-compose.yml`，默认包含：
+
+- `app`：FastAPI 应用
+- `db`：MySQL 8.0
+- `redis`：Redis 7
+
+### 首次部署
+
+```bash
+cd ~/ai-picturebook-backend-handwrite
+cp .env.example .env
+```
+
+生产环境建议配置：
+
+```env
+APP_ENV=production
+APP_DEBUG=false
+APP_PORT=8001
+SECRET_KEY=换成足够长的随机字符串
+
+AI_PROVIDER=qwen
+QWEN_MODEL=qwen3.6-flash
+QWEN_API_KEY=你的API_KEY
+
+TTS_PROVIDER=edge
+TTS_MAX_CHARS=220
+EDGE_TTS_VOICE=zh-CN-XiaoxiaoNeural
+EDGE_TTS_RATE=-5%
+EDGE_TTS_VOLUME=+0%
+
+MYSQL_ROOT_PASSWORD=换成数据库密码
+MYSQL_DATABASE=ai_story
+```
 
 启动：
 
 ```bash
 docker compose up -d --build
-docker compose ps
-docker compose logs -f app
+docker ps
+docker logs -f ai-picturebook-app
 ```
 
-服务默认端口：`8001`。
+### 更新部署
+
+```bash
+cd ~/ai-picturebook-backend-handwrite
+git pull
+
+rm -rf uploads/tts/*
+mkdir -p uploads/tts
+
+docker rm -f ai-picturebook-app 2>/dev/null || true
+docker rm -f $(docker ps -aq --filter "name=ai-picturebook-app") 2>/dev/null || true
+
+docker compose build app
+docker compose up -d app
+docker logs -f ai-picturebook-app
+```
+
+如果服务器缺少 Compose v2：
+
+```bash
+apt update
+apt install -y docker-compose-plugin
+docker compose version
+```
+
+如果 `git pull` 走了失效代理：
+
+```bash
+git config --global --unset http.proxy || true
+git config --global --unset https.proxy || true
+unset http_proxy https_proxy HTTP_PROXY HTTPS_PROXY
+git pull
+```
 
 ---
 
-## 5. 重要接口
+## Edge TTS 与 Piper
 
-### 用户
+默认推荐 Edge TTS：
+
+```env
+TTS_PROVIDER=edge
+TTS_MAX_CHARS=220
+EDGE_TTS_VOICE=zh-CN-XiaoxiaoNeural
+EDGE_TTS_RATE=-5%
+EDGE_TTS_VOLUME=+0%
+```
+
+接口：
+
+```http
+POST /api/stories/tts
+```
+
+请求示例：
+
+```json
+{
+  "text": "故事从安静的小房间里慢慢开始。小主角好像发现了新的线索。",
+  "voice_preset": null
+}
+```
+
+返回 `data.audio_url`，前端直接用 `<audio>` 播放。
+
+Piper 可以作为离线备用：
+
+```env
+TTS_PROVIDER=piper
+PIPER_BINARY=piper
+PIPER_MODEL_PATH=models/piper/zh_CN-huayan-medium.onnx
+PIPER_CONFIG_PATH=models/piper/zh_CN-huayan-medium.onnx.json
+```
+
+下载 Piper 中文模型：
+
+```bash
+python scripts/download_piper_model.py --voice zh_CN-huayan-medium
+```
+
+注意：`models/piper/` 和 `uploads/tts/` 不提交 Git。
+
+---
+
+## 时延统计
+
+系统会在 `/api/stories/scan` 返回 `timing` 字段，并写入日志。
+
+示例：
+
+```json
+{
+  "timing": {
+    "cache_hit": false,
+    "response_mode": "fast",
+    "crop_mode": "guide_crop",
+    "read_ms": 1,
+    "page_detect_ms": 38,
+    "crop_ms": 4,
+    "enhance_ms": 12,
+    "analysis_ms": 3200,
+    "story_ms": 0,
+    "quality_ms": 1,
+    "total_ms": 3260
+  }
+}
+```
+
+日志筛选：
+
+```bash
+grep -E "scan.timing|tts.timing" logs/app.log
+```
+
+Windows PowerShell：
+
+```powershell
+Select-String -Path logs/app.log -Pattern "scan.timing|tts.timing"
+```
+
+答辩或论文中可以统计：
+
+- `total_ms`：端到端扫描耗时
+- `analysis_ms`：视觉模型识别耗时
+- `story_ms`：讲述生成耗时
+- `page_detect_ms`：页框检测耗时
+- `crop_ms`：裁剪耗时
+- `enhance_ms`：图像增强耗时
+- `quality_ms`：质量评估耗时
+- `tts.timing total_ms`：语音生成耗时
+
+---
+
+## 主要接口
+
+用户：
+
 - `POST /api/users/register`
 - `POST /api/users/login`
-- `POST /api/users/forgot-password`
-- `POST /api/users/reset-password`
-- `POST /api/users/change-password`
 - `GET /api/users/me`
 
-### 绘本与图片
+绘本：
+
 - `POST /api/books`
 - `GET /api/books`
 - `GET /api/books/{book_id}`
 - `DELETE /api/books/{book_id}`
+
+图片：
+
 - `POST /api/books/{book_id}/images/upload`
 - `GET /api/books/{book_id}/images`
 
-### 故事与实时识别
+故事与实时识别：
+
 - `POST /api/stories/generate`
 - `POST /api/stories/generate/submit`
 - `GET /api/stories/tasks/{task_id}`
 - `POST /api/stories/scan`
+- `POST /api/stories/tts`
 - `POST /api/stories/evaluate`
 - `GET /api/stories/{story_id}/quality`
 - `GET /api/stories`
 - `GET /api/stories/{story_id}`
 - `DELETE /api/stories/{story_id}`
 
-统一响应格式：
+健康检查：
 
-```json
-{
-  "success": true,
-  "message": "xxx",
-  "data": {}
-}
-```
+- `GET /health`
+- `GET /health/ready`
 
 ---
 
-## 6. 实时识别（手机）
-
-页面：`/ui/camera`
-
-当前链路：
-1. 手机浏览器调用摄像头
-2. 前端引导框与稳定检测
-3. 后端可选 OpenCV 页框检测/裁剪
-4. 视觉分析（`vision_analysis_service`）
-5. 快速讲述或完整生成
-6. 质量评估与上下文记忆返回
-
-建议：
-- 用 HTTPS 打开页面（手机摄像头权限更稳定）
-- 后摄优先，尽量保证光线均匀
-- 先点“启动摄像头”，再“识别当前页”
-
----
-
-## 7. 论文评估导出
-
-脚本：`scripts/export_story_quality_report.py`
-
-示例：
-
-```bash
-# 按故事记录导出
-python scripts/export_story_quality_report.py --story-id 12 --format json
-
-# 本地文件导出
-python scripts/export_story_quality_report.py \
-  --analysis-file ./sample_analysis.json \
-  --story-file ./sample_story.txt \
-  --format csv \
-  --output ./report.csv
-```
-
----
-
-## 8. 常见问题
-
-### 8.1 `KeyError: 'ContainerConfig'`（docker-compose 1.29.2）
-
-这是旧版 `docker-compose`（v1）常见问题，建议升级到 Compose v2，并使用 `docker compose`（有空格）。
-
-临时恢复：
-
-```bash
-docker rm -f ai-picturebook-app 2>/dev/null || true
-docker-compose rm -f app || true
-docker-compose up -d --build --no-deps --force-recreate app
-```
-
-长期方案：
-
-```bash
-sudo apt-get update
-sudo apt-get install -y docker-compose-plugin
-docker compose version
-```
-
-### 8.2 手机端摄像头无法启动
-
-- 检查浏览器权限是否允许摄像头
-- 确认使用 HTTPS（或本地 `localhost`）
-- 清理浏览器缓存和站点权限后重试
-
-### 8.3 识别文案出现乱码或异常口吻
-
-- 先确认已拉取并部署最新代码
-- 检查 `app/services/live_story_service.py` 与 `app/routers/stories.py` 是否为最新版本
-- 重新构建镜像并重启 `app` 容器
-
----
-
-## 9. 测试
+## 测试与检查
 
 ```bash
 pytest -q
 ```
 
-可额外做编译检查：
+编译检查：
 
 ```bash
-python -m py_compile app/routers/stories.py app/services/live_story_service.py
+python -m py_compile app/routers/stories.py app/services/live_story_service.py app/services/tts_service.py
+```
+
+前端脚本检查：
+
+```bash
+node --check app/static/camera.js
 ```
 
 ---
 
-## 10. 说明
+## 常见问题
 
-- `.env`、`uploads/`、`logs/` 不应提交到仓库
-- 项目包含演示与论文场景，建议优先用 Docker 保证环境一致性
-## Edge TTS / Piper TTS（可选）
+### 手机摄像头无法启动
 
-已新增接口：`POST /api/stories/tts`  
-用于把实时识别后的讲述文本转成音频并返回播放地址。当前推荐默认使用 Edge TTS，普通话更自然；Piper 保留为离线备用方案。
+- 优先使用 HTTPS 域名访问。
+- 检查浏览器摄像头权限。
+- 清理站点权限和缓存后重试。
+- 微信/部分内置浏览器权限可能不稳定，建议使用手机系统浏览器。
 
-请求示例：
+### Docker 报 `KeyError: 'ContainerConfig'`
 
-```json
-{
-  "text": "这一页里，小熊和小兔一起出发去森林探险。",
-  "voice_preset": null
-}
-```
-
-返回 `data.audio_url`，前端可直接 `<audio src>` 播放。
-
-环境变量：
-
-```env
-TTS_PROVIDER=edge
-TTS_MAX_CHARS=220
-
-EDGE_TTS_VOICE=zh-CN-XiaoxiaoNeural
-EDGE_TTS_RATE=+0%
-EDGE_TTS_VOLUME=+0%
-
-# 如需离线朗读，可改为 TTS_PROVIDER=piper
-PIPER_BINARY=piper
-PIPER_MODEL_PATH=models/piper/zh_CN-huayan-medium.onnx
-PIPER_CONFIG_PATH=models/piper/zh_CN-huayan-medium.onnx.json
-PIPER_LENGTH_SCALE=1.08
-PIPER_NOISE_SCALE=0.667
-PIPER_NOISE_W=0.8
-PIPER_SENTENCE_SILENCE=0.2
-PIPER_USE_CUDA=false
-```
-
-Edge TTS 首次使用前安装依赖：
+这是旧版 `docker-compose` v1 常见问题。推荐使用 Compose v2：
 
 ```bash
-pip install edge-tts
+apt install -y docker-compose-plugin
+docker compose version
 ```
 
-如需使用 Piper 离线模型，首次使用前下载默认中文语音模型：
+临时处理：
+
 ```bash
-python scripts/download_piper_model.py --voice zh_CN-huayan-medium
+docker rm -f ai-picturebook-app 2>/dev/null || true
+docker compose up -d --build app
 ```
 
-说明：
-- 默认关闭（`TTS_PROVIDER=none`），不影响原有识别/生成流程。
-- 音频文件保存在 `uploads/tts/`。
-- Edge TTS 会生成 mp3，Piper 会生成 wav，前端会直接使用返回的 `audio_url` 播放。
-- Piper 模型文件建议放在 `models/piper/`，便于本地和服务器使用同一套路径。
+### Git 不小心提交了语音文件
+
+项目已忽略 `uploads/tts/`。如果历史中已被跟踪，可以执行：
+
+```bash
+git rm --cached -r uploads/tts
+git add .gitignore
+git commit -m "chore: ignore generated tts audio files"
+```
+
+云端清理：
+
+```bash
+rm -rf uploads/tts/*
+mkdir -p uploads/tts
+```
+
+---
+
+## 论文与答辩表述
+
+可以这样介绍本项目：
+
+```text
+本课题研究的不是传统的上传图片后生成故事，而是一个面向手机浏览器连续翻页场景的实时绘本视觉理解与低时延智能讲述系统。系统通过摄像头采集、页面稳定检测、页框裁剪、图文联合理解、上下文记忆、快速讲述生成和语音朗读，构成从动态视觉输入到儿童适龄叙事输出的端云协同闭环。
+```
+
+核心创新点：
+
+- 面向真实移动端共读场景，而不是离线图片上传。
+- 设计了稳定帧触发和重复页抑制机制，避免翻页中间态频繁识别。
+- 使用页框检测、引导框裁剪和整图兜底，提高输入质量和系统鲁棒性。
+- 将 VLM 识别结果转为页级状态，维护最近页面和角色表，实现连续讲述。
+- 区分快速响应与完整生成，兼顾实时体验和文本质量。
+- 加入 Edge TTS 与手机端底部结果抽屉，形成可展示的讲述闭环。
+- 记录端到端与分阶段时延，便于系统评估和论文实验分析。
+
+---
+
+## 版本管理说明
+
+不建议提交：
+
+- `.env`
+- `logs/`
+- `uploads/tts/`
+- `models/piper/`
+- 本地数据库文件
+- 论文中间产物和临时测试文件
+
+推荐提交：
+
+- 后端源码
+- 前端静态页面
+- `requirements.txt`
+- `Dockerfile`
+- `docker-compose.yml`
+- `.env.example`
+- README / DEPLOY 文档
