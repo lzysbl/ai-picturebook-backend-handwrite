@@ -1216,6 +1216,17 @@ a {
   grid-template-columns: 1fr 1fr;
 }
 
+.camera-actions-secondary {
+  margin-top: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.camera-tts-audio {
+  width: 100%;
+}
+
 .camera-stage {
   position: relative;
   margin-top: 16px;
@@ -1326,7 +1337,7 @@ a {
 }
 
 .camera-result-panel {
-  min-height: 620px;
+  min-height: 520px;
 }
 
 .camera-result-header {
@@ -1365,6 +1376,23 @@ a {
 
   .camera-layout {
     grid-template-columns: 1fr;
+  }
+
+  .camera-result-panel {
+    display: none;
+    min-height: auto;
+  }
+
+  .camera-result-panel.mobile-open {
+    display: block;
+    position: fixed;
+    left: 10px;
+    right: 10px;
+    bottom: calc(max(10px, env(safe-area-inset-bottom)) + 134px);
+    z-index: 1300;
+    max-height: 68vh;
+    overflow: auto;
+    border-radius: 16px;
   }
 
   .inline {
@@ -1440,12 +1468,12 @@ a {
   }
 
   .camera-stage {
-    min-height: 420px;
+    min-height: 260px;
   }
 
   .camera-video {
-    min-height: 420px;
-    max-height: 72vh;
+    min-height: 260px;
+    max-height: 44vh;
   }
 
   .history-panel .list,
@@ -1494,7 +1522,7 @@ a {
 }
 
 .camera-mobile-result.expanded .camera-mobile-story {
-  max-height: 120px;
+  max-height: 168px;
 }
 
 .camera-mobile-result-actions {
@@ -1506,9 +1534,20 @@ a {
   display: block;
 }
 
+.camera-mobile-spacer {
+  display: none;
+}
+
 @media (min-width: 901px) {
   .camera-mobile-result {
     display: none !important;
+  }
+}
+
+@media (max-width: 900px) {
+  .camera-mobile-spacer {
+    display: block;
+    height: 170px;
   }
 }
 

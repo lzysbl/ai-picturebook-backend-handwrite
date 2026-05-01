@@ -21,7 +21,7 @@ from app.core.redis_client import get_redis
 from app.db.session import SessionLocal, get_db
 from app.routers.users import get_current_user
 from app.schemas.common import ApiResponse
-from app.schemas.story import StoryEvaluateRequest, StoryGenerateData, StoryGenerateRequest, StoryInfo
+from app.schemas.story import StoryEvaluateRequest, StoryGenerateData, StoryGenerateRequest, StoryInfo, StoryTTSRequest
 from app.services.book_service import get_book_by_id_and_user
 from app.services.eval_service import evaluate_story_full
 from app.services.image_service import list_book_images
@@ -46,6 +46,7 @@ from app.services.task_progress_service import (
     task_public_view,
     update_story_task,
 )
+from app.services.tts_service import synthesize_text_to_speech
 from app.services.vision_analysis_service import analyze_images
 from app.utils.rate_limiter import enforce_rate_limit
 
@@ -847,6 +848,37 @@ async def scan_story_page_api(
     }
     await _set_scan_cache(cache_key, payload)
     return ApiResponse(success=True, message="实时识别完成", data=payload)
+
+
+@router.post("/tts", response_model=ApiResponse)
+async def story_tts_api(
+    payload: StoryTTSRequest,
+    request: Request,
+    current_user=Depends(get_current_user),
+) -> ApiResponse:
+    await enforce_rate_limit(
+        request=request,
+        action="stories:tts",
+        limit=settings.rate_limit_story_submit_limit,
+        window_seconds=settings.rate_limit_story_submit_window_seconds,
+        user_id=current_user.id,
+    )
+    result = await synthesize_text_to_speech(
+        text=payload.text,
+        voice_preset=payload.voice_preset,
+    )
+    return ApiResponse(
+        success=True,
+        message="朗读音频生成成功",
+        data={
+            "audio_url": result.file_url,
+            "provider": result.provider,
+            "sample_rate": result.sample_rate,
+            "duration_seconds": result.duration_seconds,
+            "text_chars": result.text_chars,
+            "voice_preset": result.voice_preset,
+        },
+    )
 
 
 @router.post("/generate/submit", response_model=ApiResponse)

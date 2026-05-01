@@ -48,6 +48,12 @@ class Settings(BaseSettings):
     )
     qwen_api_key: str = Field(default="", validation_alias="QWEN_API_KEY")
 
+    tts_provider: str = Field(default="none", validation_alias="TTS_PROVIDER")
+    tts_max_chars: int = Field(default=420, validation_alias="TTS_MAX_CHARS")
+    bark_enabled: bool = Field(default=False, validation_alias="BARK_ENABLED")
+    bark_voice_preset: str = Field(default="v2/en_speaker_6", validation_alias="BARK_VOICE_PRESET")
+    bark_seed: int | None = Field(default=None, validation_alias="BARK_SEED")
+
     judge_enabled: bool = Field(default=False, validation_alias="JUDGE_ENABLED")
     judge_model: str = Field(default="qwen3.6-plus", validation_alias="JUDGE_MODEL")
     judge_samples: int = Field(default=3, validation_alias="JUDGE_SAMPLES")

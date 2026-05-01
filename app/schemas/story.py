@@ -56,3 +56,10 @@ class StoryGenerateData(BaseModel):
     quality: dict[str, Any]
     story: StoryInfo
 
+
+class StoryTTSRequest(BaseModel):
+    """实时讲述文本转语音请求。"""
+
+    text: str = Field(..., min_length=1, description="待朗读文本")
+    voice_preset: str | None = Field(default=None, description="可选 Bark 语音预设")
+

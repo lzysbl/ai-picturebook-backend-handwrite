@@ -3,6 +3,8 @@ window.addEventListener("DOMContentLoaded", async () => {
 
   const startBtn = document.getElementById("start-camera");
   const captureBtn = document.getElementById("capture-frame");
+  const ttsPlayBtn = document.getElementById("camera-tts-play");
+  const ttsAudio = document.getElementById("camera-tts-audio");
   const video = document.getElementById("camera-video");
   const canvas = document.getElementById("camera-canvas");
   const cameraStage = document.querySelector(".camera-stage");
@@ -47,6 +49,7 @@ window.addEventListener("DOMContentLoaded", async () => {
   let scanSessionId = globalThis.crypto?.randomUUID?.() || `scan-${Date.now()}`;
   let currentGuideBox = null;
   let currentDetectedBox = null;
+  let latestStoryText = "";
 
   const STABLE_FRAMES_REQUIRED = 2;
   const SIGNATURE_DIFF_THRESHOLD = 18;
@@ -75,20 +78,20 @@ window.addEventListener("DOMContentLoaded", async () => {
 
   function updateMobileResult(summary, story) {
     if (!mobileResult || !mobileMeta || !mobileStory) return;
-    mobileMeta.textContent = summary || "Result updated";
-    const compact = String(story || "").split("\n").slice(0, 2).join("\n");
+    mobileMeta.textContent = summary || "识别结果";
+    const compact = String(story || "").split("\n").slice(0, 3).join("\n");
     mobileStory.textContent = compact;
     mobileResult.classList.remove("hidden");
     if (window.matchMedia && window.matchMedia("(max-width: 900px)").matches) {
       mobileResult.classList.add("expanded");
-      if (mobileToggleBtn) mobileToggleBtn.textContent = "Collapse";
+      if (mobileToggleBtn) mobileToggleBtn.textContent = "收起";
     }
   }
 
   function toggleMobileResult() {
     if (!mobileResult || !mobileToggleBtn) return;
     const expanded = mobileResult.classList.toggle("expanded");
-    mobileToggleBtn.textContent = expanded ? "Collapse" : "Expand";
+    mobileToggleBtn.textContent = expanded ? "收起" : "展开";
   }
 
   function switchCameraTab(tabName) {
@@ -126,26 +129,15 @@ window.addEventListener("DOMContentLoaded", async () => {
 
   function buildGuidePageBox() {
     const videoAspect = (video.videoWidth || 3) / Math.max(1, video.videoHeight || 4);
-
-    // Use a near-fullscreen guide box on mobile to avoid an overly narrow target area.
     const marginX = 0.03;
     const marginY = 0.04;
     let guideWidth = 1 - marginX * 2;
     let guideHeight = 1 - marginY * 2;
 
-    // Keep shape roughly page-like without shrinking too aggressively.
     const aspect = guideWidth / Math.max(0.0001, guideHeight);
-    if (aspect < 0.55) {
-      guideWidth = Math.min(0.96, guideHeight * 0.65);
-    }
-    if (aspect > 1.15) {
-      guideHeight = Math.min(0.96, guideWidth / 1.05);
-    }
-
-    // Slight adjustment for very tall camera feeds.
-    if (videoAspect < 0.7) {
-      guideWidth = Math.min(guideWidth, 0.9);
-    }
+    if (aspect < 0.55) guideWidth = Math.min(0.96, guideHeight * 0.65);
+    if (aspect > 1.15) guideHeight = Math.min(0.96, guideWidth / 1.05);
+    if (videoAspect < 0.7) guideWidth = Math.min(guideWidth, 0.9);
 
     return {
       x: (1 - guideWidth) / 2,
@@ -207,8 +199,12 @@ window.addEventListener("DOMContentLoaded", async () => {
       setDetectedBox(currentDetectedBox, currentDetectedBox ? "沿用上次识别框" : "后端识别框");
     }
 
-    storyOutput.textContent = result?.story_content || "未返回讲述文本";
+    latestStoryText = String(result?.story_content || "");
+    storyOutput.textContent = latestStoryText || "未返回讲述文本";
+    if (ttsPlayBtn) ttsPlayBtn.disabled = !latestStoryText;
     resultMeta.textContent = `识别完成：角色 ${Array.isArray(first["角色"]) ? first["角色"].join("、") || "未识别" : "未识别"} | 场景 ${first["场景"] || "未识别"}`;
+
+    updateMobileResult("识别结果已更新", latestStoryText);
 
     if (quality) {
       qualityPanel.classList.remove("hidden");
@@ -229,6 +225,36 @@ window.addEventListener("DOMContentLoaded", async () => {
       qualityPanel.classList.add("hidden");
       qualitySummary.textContent = "";
       analysisOutput.textContent = "";
+    }
+  }
+
+  async function playStoryTTS() {
+    const text = String(latestStoryText || "").trim();
+    if (!text) {
+      showToast("请先完成一次识别");
+      return;
+    }
+    if (!ttsPlayBtn) return;
+    const oldLabel = ttsPlayBtn.textContent;
+    ttsPlayBtn.disabled = true;
+    ttsPlayBtn.textContent = "生成语音中...";
+    try {
+      const data = await apiRequest("/api/stories/tts", {
+        method: "POST",
+        body: JSON.stringify({ text }),
+      });
+      const audioUrl = data?.audio_url;
+      if (!audioUrl) throw new Error("未返回音频地址");
+      if (!ttsAudio) return;
+      ttsAudio.src = audioUrl;
+      ttsAudio.classList.remove("hidden");
+      await ttsAudio.play();
+      showToast("开始朗读");
+    } catch (error) {
+      showToast(error.message || "朗读失败");
+    } finally {
+      ttsPlayBtn.textContent = oldLabel || "朗读当前讲述";
+      ttsPlayBtn.disabled = !latestStoryText;
     }
   }
 
@@ -395,11 +421,11 @@ window.addEventListener("DOMContentLoaded", async () => {
     const scannedDiff = signatureDiff(signature, lastScannedSignature);
     if (automatic && scannedDiff <= SIGNATURE_DIFF_THRESHOLD) {
       updateStateBadges({
-        pageState: "页面状态：与上一结果接近",
+        pageState: "页面状态：与上个结果接近",
         stabilityText: `稳定帧：${stableFrameCount} / ${STABLE_FRAMES_REQUIRED}`,
         signatureText: `重复检测：命中缓存阈值 ${scannedDiff}`,
       });
-      setStatus("自动扫描中：当前页面与上次识别结果接近，已跳过重复请求。");
+      setStatus("自动扫描中：当前页与上一结果接近，已跳过重复请求。");
       return;
     }
 
@@ -452,6 +478,7 @@ window.addEventListener("DOMContentLoaded", async () => {
 
   startBtn?.addEventListener("click", startCamera);
   captureBtn?.addEventListener("click", () => scanCurrentFrame({ automatic: false }));
+  ttsPlayBtn?.addEventListener("click", playStoryTTS);
   autoScanSelect?.addEventListener("change", restartAutoScanIfNeeded);
   intervalSelect?.addEventListener("change", restartAutoScanIfNeeded);
   cameraTabs.forEach((tab) => {
@@ -461,9 +488,9 @@ window.addEventListener("DOMContentLoaded", async () => {
   mobileToggleBtn?.addEventListener("click", toggleMobileResult);
   mobileOpenDetailBtn?.addEventListener("click", () => {
     const panel = document.querySelector(".camera-result-panel");
-    panel?.scrollIntoView({ behavior: "smooth", block: "start" });
+    panel?.classList.toggle("mobile-open");
+    panel?.scrollIntoView({ behavior: "smooth", block: "center" });
   });
-
 
   video?.addEventListener("loadedmetadata", syncEmptyHintVisibility);
   video?.addEventListener("playing", syncEmptyHintVisibility);
@@ -475,9 +502,7 @@ window.addEventListener("DOMContentLoaded", async () => {
 
   window.addEventListener("beforeunload", () => {
     stopAutoScan();
-    if (stream) {
-      stream.getTracks().forEach((track) => track.stop());
-    }
+    if (stream) stream.getTracks().forEach((track) => track.stop());
   });
 
   await ensureAuth();

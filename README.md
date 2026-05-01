@@ -1,26 +1,23 @@
-# AI 绘本故事生成系统（毕业论文项目）
+# AI 绘本故事生成系统（毕业设计项目）
 
-一个可运行的 FastAPI 全栈原型系统，支持：
-- 用户注册、登录（JWT 鉴权）
-- 绘本创建、查询、删除
-- 图片上传与分页管理
-- 多页图片分析并生成故事
-- 故事历史查询、详情查看、删除
-- 规则评分 + 可选 LLM 深度评分
-- 异步任务进度轮询（刷新页面可恢复）
-- Swagger 接口文档
+一个基于 FastAPI 的多模态绘本系统，支持：
+- 用户注册、登录、找回与重置密码
+- 绘本创建/删除、图片上传与分页管理
+- 绘本故事生成（同步/异步任务）
+- 实时识别（手机浏览器调用摄像头）与连续讲述
+- 质量评估（规则指标 + 可选 LLM Judge）
+- 论文导出脚本（JSON/CSV）
 
 ---
 
 ## 1. 技术栈
 
-- Python 3.11+
+- Python 3.11
 - FastAPI + Uvicorn
-- SQLAlchemy（Async）+ Pydantic
-- SQLite / MySQL（可切换）
-- Redis（可选：任务进度、评分缓存、限流）
-- Pillow
-- OpenAI 兼容 SDK（用于 Qwen 兼容接口）
+- SQLAlchemy Async + Pydantic
+- MySQL / SQLite
+- Redis（可选但推荐，任务与缓存）
+- Pillow + OpenCV（页框检测与图像预处理）
 
 ---
 
@@ -28,24 +25,24 @@
 
 ```text
 app/
-  core/        # 配置、日志、Redis、请求上下文
-  db/          # Base、异步会话、建表初始化
-  models/      # ORM 模型（users/books/book_images/stories）
-  routers/     # API 路由层
-  schemas/     # 请求与响应模型
-  services/    # 业务逻辑（用户/绘本/图片/AI/评估/任务进度）
-  static/      # 前端页面与 JS/CSS（登录、注册、管理、上传、生成、历史）
-  utils/       # 工具函数（安全、限流、爬虫等）
-  main.py      # 应用入口
+  core/        配置、日志、Redis、请求上下文
+  db/          会话与建表初始化
+  models/      ORM 模型
+  routers/     API 路由
+  schemas/     请求/响应模型
+  services/    业务逻辑（生成、评估、实时识别等）
+  static/      前端页面与脚本（含 camera）
+  main.py      应用入口
 
-tests/         # 测试与连通性脚本
-uploads/       # 上传图片目录
-logs/          # 运行日志目录
+scripts/       论文评估导出等脚本
+tests/         自动化测试
+uploads/       上传目录
+logs/          日志目录
 ```
 
 ---
 
-## 3. 环境准备
+## 3. 快速开始（本地）
 
 ### 3.1 安装依赖
 
@@ -53,142 +50,77 @@ logs/          # 运行日志目录
 pip install -r requirements.txt
 ```
 
-### 3.2 使用 `.env.example`
-
-项目已提供环境变量模板文件 [`.env.example`](C:/Users/runsing/Desktop/毕业论文/项目代码_手写版/.env.example)。
-
-先复制为 `.env`：
+### 3.2 配置环境变量
 
 ```bash
 cp .env.example .env
 ```
 
-Windows PowerShell：
-
-```powershell
-Copy-Item .env.example .env
-```
-
-然后修改 `.env` 中这些关键项：
-- `DATABASE_URL`
+至少修改：
 - `SECRET_KEY`
-- `QWEN_API_KEY`（如果启用 Qwen）
+- `AI_PROVIDER`（`mock` 或 `qwen`）
+- 若用 qwen：`QWEN_API_KEY`
 
-### 3.3 `.env` 字段结构说明
-
-#### 应用基础
-- `APP_NAME`：应用名称（Swagger 标题会使用）
-- `APP_ENV`：运行环境（如 `development` / `production`）
-- `APP_DEBUG`：是否调试模式（`true/false`）
-
-#### 数据库
-- `DATABASE_URL`：数据库连接串
-  - SQLite：`sqlite+aiosqlite:///./ai_story.db`
-  - MySQL：`mysql+aiomysql://用户名:密码@主机:端口/库名?charset=utf8mb4`
-
-#### 鉴权
-- `SECRET_KEY`：JWT 签名密钥（必须自定义，不要泄露）
-- `ACCESS_TOKEN_EXPIRE_MINUTES`：登录 token 过期时间（分钟）
-
-#### 文件上传
-- `UPLOAD_DIR`：上传图片保存目录（如 `./uploads`）
-
-#### AI 生成
-- `AI_PROVIDER`：`mock` 或 `qwen`
-- `QWEN_MODEL`：模型名（如 `qwen3.6-flash`）
-- `QWEN_BASE_URL`：兼容接口地址
-- `QWEN_API_KEY`：模型服务 API Key（敏感）
-
-#### Redis（可选）
-- `REDIS_ENABLED`：是否启用 Redis
-- `REDIS_URL`：Redis 连接地址
-- `STORY_CACHE_TTL_SECONDS`：任务状态缓存 TTL（秒）
-- `QUALITY_CACHE_TTL_SECONDS`：评分缓存 TTL（秒）
-
-#### 限流
-- `RATE_LIMIT_ENABLED`：是否启用限流
-- `RATE_LIMIT_LOGIN_LIMIT` / `RATE_LIMIT_LOGIN_WINDOW_SECONDS`
-- `RATE_LIMIT_REGISTER_LIMIT` / `RATE_LIMIT_REGISTER_WINDOW_SECONDS`
-- `RATE_LIMIT_STORY_SUBMIT_LIMIT` / `RATE_LIMIT_STORY_SUBMIT_WINDOW_SECONDS`
-
-#### 深度评分
-- `JUDGE_ENABLED`：是否开启 LLM 深度评分
-- `JUDGE_MODEL`：深度评分模型
-- `JUDGE_SAMPLES`：采样次数（建议 1~3）
-
-#### 日志
-- `LOG_LEVEL`：日志级别（`INFO`/`WARNING`/`ERROR`）
-- `LOG_DIR`：日志目录
-- `LOG_FILE`：日志文件名
-- `LOG_MAX_BYTES`：单文件最大字节数
-- `LOG_BACKUP_COUNT`：日志轮转保留份数
-
----
-
-## 4. 数据库启动（MySQL 可选）
-
-如果使用 MySQL，先建库：
-
-```sql
-CREATE DATABASE IF NOT EXISTS ai_story DEFAULT CHARSET utf8mb4;
-```
-
-应用启动时会自动执行建表（`init_db`）。
-
----
-
-## 5. 运行项目
-
-在项目根目录执行：
+### 3.3 启动服务
 
 ```bash
 uvicorn app.main:app --reload --port 8001
 ```
 
-访问：
-- 前端入口：`http://127.0.0.1:8001/ui/login`
+访问地址：
+- 登录页：`http://127.0.0.1:8001/ui/login`
+- 实时识别：`http://127.0.0.1:8001/ui/camera`
 - Swagger：`http://127.0.0.1:8001/docs`
 - 健康检查：`http://127.0.0.1:8001/health`
 
 ---
 
-## 6. 页面入口（已拆分）
+## 4. Docker 部署（推荐）
 
-- `/ui/login`：登录
-- `/ui/register`：注册
-- `/ui/books`：绘本管理
-- `/ui/upload`：图片上传
-- `/ui/generate`：故事生成
-- `/ui/history`：历史记录与评分
+项目提供：
+- `Dockerfile`
+- `docker-compose.yml`
+
+启动：
+
+```bash
+docker compose up -d --build
+docker compose ps
+docker compose logs -f app
+```
+
+服务默认端口：`8001`。
 
 ---
 
-## 7. 主要 API
+## 5. 重要接口
 
 ### 用户
 - `POST /api/users/register`
 - `POST /api/users/login`
+- `POST /api/users/forgot-password`
+- `POST /api/users/reset-password`
+- `POST /api/users/change-password`
 - `GET /api/users/me`
 
-### 绘本
+### 绘本与图片
 - `POST /api/books`
 - `GET /api/books`
 - `GET /api/books/{book_id}`
 - `DELETE /api/books/{book_id}`
-
-### 图片
 - `POST /api/books/{book_id}/images/upload`
 - `GET /api/books/{book_id}/images`
 
-### 故事
-- `POST /api/stories/generate`（同步）
-- `POST /api/stories/generate/submit`（异步提交）
-- `GET /api/stories/tasks/{task_id}`（进度轮询）
+### 故事与实时识别
+- `POST /api/stories/generate`
+- `POST /api/stories/generate/submit`
+- `GET /api/stories/tasks/{task_id}`
+- `POST /api/stories/scan`
+- `POST /api/stories/evaluate`
+- `GET /api/stories/{story_id}/quality`
 - `GET /api/stories`
 - `GET /api/stories/{story_id}`
 - `DELETE /api/stories/{story_id}`
-- `GET /api/stories/{story_id}/quality`
-- `POST /api/stories/evaluate`
 
 统一响应格式：
 
@@ -202,73 +134,125 @@ uvicorn app.main:app --reload --port 8001
 
 ---
 
-## 8. 生成与评分流程
+## 6. 实时识别（手机）
 
-1. 前端提交异步任务 `/api/stories/generate/submit`
-2. 后端按页分析图片（并发）
-3. 生成故事并入库
-4. 计算基础评分（连贯性、年龄适配、文本指标）
-5. 可选 LLM 深度评分（`JUDGE_ENABLED=true` + `include_judge=true`）
-6. 前端轮询任务进度并展示结果
+页面：`/ui/camera`
 
----
+当前链路：
+1. 手机浏览器调用摄像头
+2. 前端引导框与稳定检测
+3. 后端可选 OpenCV 页框检测/裁剪
+4. 视觉分析（`vision_analysis_service`）
+5. 快速讲述或完整生成
+6. 质量评估与上下文记忆返回
 
-## 9. Redis 在本项目中的作用
-
-- 异步任务进度状态缓存
-- 故事评分缓存（避免重复评分）
-- 接口限流（登录/注册/生成）
-
-当 `REDIS_ENABLED=false` 或 Redis 不可用时，系统自动降级为内存模式（单机开发可用）。
+建议：
+- 用 HTTPS 打开页面（手机摄像头权限更稳定）
+- 后摄优先，尽量保证光线均匀
+- 先点“启动摄像头”，再“识别当前页”
 
 ---
 
-## 10. 常见问题
+## 7. 论文评估导出
 
-1. `ModuleNotFoundError: No module named 'app'`  
-请在项目根目录运行：`uvicorn app.main:app ...`
+脚本：`scripts/export_story_quality_report.py`
 
-2. `ConnectionRefusedError: ('127.0.0.1', 3306)`  
-MySQL 未启动或连接串错误，检查 `DATABASE_URL`。
-
-3. `WinError 10013`  
-端口冲突或权限问题，换端口：
+示例：
 
 ```bash
-uvicorn app.main:app --reload --port 8002
+# 按故事记录导出
+python scripts/export_story_quality_report.py --story-id 12 --format json
+
+# 本地文件导出
+python scripts/export_story_quality_report.py \
+  --analysis-file ./sample_analysis.json \
+  --story-file ./sample_story.txt \
+  --format csv \
+  --output ./report.csv
 ```
 
-4. `bcrypt` 相关报错  
-项目已固定兼容版本：`passlib[bcrypt]==1.7.4` + `bcrypt==4.0.1`
-
 ---
 
-## 11. 说明
+## 8. 常见问题
 
-- `.env`、`uploads/`、`logs/`、`demo_book/`、`learning/` 已被忽略，不会提交到 Git。
-- 本项目目标是：可运行、可演示、可扩展，支持毕业设计展示与求职项目展示。
+### 8.1 `KeyError: 'ContainerConfig'`（docker-compose 1.29.2）
 
----
+这是旧版 `docker-compose`（v1）常见问题，建议升级到 Compose v2，并使用 `docker compose`（有空格）。
 
-## 12. 部署
-
-项目已提供 Docker 部署文件：
-
-- `Dockerfile`
-- `docker-compose.yml`
-- `DEPLOY.md`
-
-推荐部署方式：
+临时恢复：
 
 ```bash
-cp .env.example .env
-docker compose up -d --build
+docker rm -f ai-picturebook-app 2>/dev/null || true
+docker-compose rm -f app || true
+docker-compose up -d --build --no-deps --force-recreate app
 ```
 
-部署后访问：
+长期方案：
 
-```text
-http://服务器公网IP:8001/ui/login
+```bash
+sudo apt-get update
+sudo apt-get install -y docker-compose-plugin
+docker compose version
 ```
 
-详细部署说明见 [`DEPLOY.md`](./DEPLOY.md)。
+### 8.2 手机端摄像头无法启动
+
+- 检查浏览器权限是否允许摄像头
+- 确认使用 HTTPS（或本地 `localhost`）
+- 清理浏览器缓存和站点权限后重试
+
+### 8.3 识别文案出现乱码或异常口吻
+
+- 先确认已拉取并部署最新代码
+- 检查 `app/services/live_story_service.py` 与 `app/routers/stories.py` 是否为最新版本
+- 重新构建镜像并重启 `app` 容器
+
+---
+
+## 9. 测试
+
+```bash
+pytest -q
+```
+
+可额外做编译检查：
+
+```bash
+python -m py_compile app/routers/stories.py app/services/live_story_service.py
+```
+
+---
+
+## 10. 说明
+
+- `.env`、`uploads/`、`logs/` 不应提交到仓库
+- 项目包含演示与论文场景，建议优先用 Docker 保证环境一致性
+## Bark TTS（可选）
+
+已新增接口：`POST /api/stories/tts`  
+用于把实时识别后的讲述文本转成 wav 音频并返回播放地址。
+
+请求示例：
+
+```json
+{
+  "text": "这一页里，小熊和小兔一起出发去森林探险。",
+  "voice_preset": "v2/en_speaker_6"
+}
+```
+
+返回 `data.audio_url`，前端可直接 `<audio src>` 播放。
+
+环境变量：
+
+```env
+TTS_PROVIDER=bark
+BARK_ENABLED=true
+BARK_VOICE_PRESET=v2/en_speaker_6
+TTS_MAX_CHARS=420
+```
+
+说明：
+- 默认关闭（`TTS_PROVIDER=none`），不影响原有识别/生成流程。
+- 音频文件保存在 `uploads/tts/`。
+- Bark 首次调用会加载模型，建议演示前先预热一次。
