@@ -863,10 +863,15 @@ async def story_tts_api(
         window_seconds=settings.rate_limit_story_submit_window_seconds,
         user_id=current_user.id,
     )
-    result = await synthesize_text_to_speech(
-        text=payload.text,
-        voice_preset=payload.voice_preset,
-    )
+    try:
+        result = await synthesize_text_to_speech(
+            text=payload.text,
+            voice_preset=payload.voice_preset,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     return ApiResponse(
         success=True,
         message="朗读音频生成成功",

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from pydantic import Field
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -50,9 +50,34 @@ class Settings(BaseSettings):
 
     tts_provider: str = Field(default="none", validation_alias="TTS_PROVIDER")
     tts_max_chars: int = Field(default=420, validation_alias="TTS_MAX_CHARS")
-    bark_enabled: bool = Field(default=False, validation_alias="BARK_ENABLED")
-    bark_voice_preset: str = Field(default="v2/en_speaker_6", validation_alias="BARK_VOICE_PRESET")
-    bark_seed: int | None = Field(default=None, validation_alias="BARK_SEED")
+    edge_tts_voice: str = Field(default="zh-CN-XiaoxiaoNeural", validation_alias="EDGE_TTS_VOICE")
+    edge_tts_rate: str = Field(default="+0%", validation_alias="EDGE_TTS_RATE")
+    edge_tts_volume: str = Field(default="+0%", validation_alias="EDGE_TTS_VOLUME")
+    piper_binary: str = Field(default="piper", validation_alias="PIPER_BINARY")
+    piper_model_path: str = Field(default="", validation_alias="PIPER_MODEL_PATH")
+    piper_config_path: str = Field(default="", validation_alias="PIPER_CONFIG_PATH")
+    piper_speaker: int | None = Field(default=None, validation_alias="PIPER_SPEAKER")
+    piper_length_scale: float | None = Field(default=None, validation_alias="PIPER_LENGTH_SCALE")
+    piper_noise_scale: float | None = Field(default=None, validation_alias="PIPER_NOISE_SCALE")
+    piper_noise_w: float | None = Field(default=None, validation_alias="PIPER_NOISE_W")
+    piper_sentence_silence: float | None = Field(default=None, validation_alias="PIPER_SENTENCE_SILENCE")
+    piper_use_cuda: bool = Field(default=False, validation_alias="PIPER_USE_CUDA")
+
+    @field_validator(
+        "piper_speaker",
+        "piper_length_scale",
+        "piper_noise_scale",
+        "piper_noise_w",
+        "piper_sentence_silence",
+        mode="before",
+    )
+    @classmethod
+    def empty_string_as_none(cls, value):
+        if value is None:
+            return None
+        if isinstance(value, str) and value.strip().lower() in {"", "none", "null"}:
+            return None
+        return value
 
     judge_enabled: bool = Field(default=False, validation_alias="JUDGE_ENABLED")
     judge_model: str = Field(default="qwen3.6-plus", validation_alias="JUDGE_MODEL")

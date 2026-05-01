@@ -15,4 +15,4 @@ python-jose[cryptography]
 PyMySQL
 redis
 opencv-python-headless
-
+edge-tts

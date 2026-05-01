@@ -227,17 +227,17 @@ python -m py_compile app/routers/stories.py app/services/live_story_service.py
 
 - `.env`、`uploads/`、`logs/` 不应提交到仓库
 - 项目包含演示与论文场景，建议优先用 Docker 保证环境一致性
-## Bark TTS（可选）
+## Edge TTS / Piper TTS（可选）
 
 已新增接口：`POST /api/stories/tts`  
-用于把实时识别后的讲述文本转成 wav 音频并返回播放地址。
+用于把实时识别后的讲述文本转成音频并返回播放地址。当前推荐默认使用 Edge TTS，普通话更自然；Piper 保留为离线备用方案。
 
 请求示例：
 
 ```json
 {
   "text": "这一页里，小熊和小兔一起出发去森林探险。",
-  "voice_preset": "v2/en_speaker_6"
+  "voice_preset": null
 }
 ```
 
@@ -246,13 +246,37 @@ python -m py_compile app/routers/stories.py app/services/live_story_service.py
 环境变量：
 
 ```env
-TTS_PROVIDER=bark
-BARK_ENABLED=true
-BARK_VOICE_PRESET=v2/en_speaker_6
-TTS_MAX_CHARS=420
+TTS_PROVIDER=edge
+TTS_MAX_CHARS=220
+
+EDGE_TTS_VOICE=zh-CN-XiaoxiaoNeural
+EDGE_TTS_RATE=+0%
+EDGE_TTS_VOLUME=+0%
+
+# 如需离线朗读，可改为 TTS_PROVIDER=piper
+PIPER_BINARY=piper
+PIPER_MODEL_PATH=models/piper/zh_CN-huayan-medium.onnx
+PIPER_CONFIG_PATH=models/piper/zh_CN-huayan-medium.onnx.json
+PIPER_LENGTH_SCALE=1.08
+PIPER_NOISE_SCALE=0.667
+PIPER_NOISE_W=0.8
+PIPER_SENTENCE_SILENCE=0.2
+PIPER_USE_CUDA=false
+```
+
+Edge TTS 首次使用前安装依赖：
+
+```bash
+pip install edge-tts
+```
+
+如需使用 Piper 离线模型，首次使用前下载默认中文语音模型：
+```bash
+python scripts/download_piper_model.py --voice zh_CN-huayan-medium
 ```
 
 说明：
 - 默认关闭（`TTS_PROVIDER=none`），不影响原有识别/生成流程。
 - 音频文件保存在 `uploads/tts/`。
-- Bark 首次调用会加载模型，建议演示前先预热一次。
+- Edge TTS 会生成 mp3，Piper 会生成 wav，前端会直接使用返回的 `audio_url` 播放。
+- Piper 模型文件建议放在 `models/piper/`，便于本地和服务器使用同一套路径。
