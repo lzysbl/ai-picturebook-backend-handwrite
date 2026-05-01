@@ -245,6 +245,14 @@ a {
   border: 1px solid var(--border);
 }
 
+.btn-soft.is-active,
+.btn-soft[aria-pressed="true"] {
+  color: #075f42;
+  border-color: rgba(43, 178, 125, 0.52);
+  background: linear-gradient(135deg, #dff8ed, #f4fffb);
+  box-shadow: 0 8px 18px rgba(32, 171, 119, 0.18);
+}
+
 .btn-danger-soft {
   border-color: #f2b7b7;
   color: #a33b3b;
@@ -1214,6 +1222,7 @@ a {
   margin-top: 14px;
   display: grid;
   grid-template-columns: 1fr 1fr;
+  align-items: stretch;
 }
 
 .camera-actions-secondary {

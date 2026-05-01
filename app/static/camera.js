@@ -3,6 +3,8 @@ window.addEventListener("DOMContentLoaded", async () => {
 
   const startBtn = document.getElementById("start-camera");
   const captureBtn = document.getElementById("capture-frame");
+  const toggleAutoScanBtn = document.getElementById("toggle-auto-scan");
+  const rescanBtn = document.getElementById("rescan-frame");
   const ttsPlayBtn = document.getElementById("camera-tts-play");
   const ttsAudio = document.getElementById("camera-tts-audio");
   const video = document.getElementById("camera-video");
@@ -17,7 +19,6 @@ window.addEventListener("DOMContentLoaded", async () => {
   const styleSelect = document.getElementById("camera-style");
   const ageSelect = document.getElementById("camera-age");
   const modeSelect = document.getElementById("camera-mode");
-  const autoScanSelect = document.getElementById("camera-auto-scan");
   const intervalSelect = document.getElementById("camera-interval");
   const promptInput = document.getElementById("camera-prompt");
   const pageStateNode = document.getElementById("camera-page-state");
@@ -51,6 +52,9 @@ window.addEventListener("DOMContentLoaded", async () => {
   let currentGuideBox = null;
   let currentDetectedBox = null;
   let latestStoryText = "";
+  let latestStoryAudioKey = "";
+  let autoScanEnabled = false;
+  let autoPlayTTSAfterScan = false;
 
   const STABLE_FRAMES_REQUIRED = 2;
   const SIGNATURE_DIFF_THRESHOLD = 18;
@@ -88,6 +92,71 @@ window.addEventListener("DOMContentLoaded", async () => {
       mobileResult.classList.add("expanded", "has-result");
       if (mobileToggleBtn) mobileToggleBtn.textContent = "收起";
     }
+  }
+
+  function setTtsAudioSource(audioUrl, storyKey) {
+    if (!ttsAudio || !audioUrl) return;
+    ttsAudio.src = audioUrl;
+    ttsAudio.dataset.storyKey = storyKey || "";
+    ttsAudio.classList.remove("hidden");
+  }
+
+  function clearTtsAudio(options = {}) {
+    const { rememberReading = false } = options;
+    latestStoryAudioKey = "";
+    if (rememberReading) {
+      autoPlayTTSAfterScan = autoPlayTTSAfterScan || shouldContinueReadingAfterScan();
+    }
+    if (ttsAudio) {
+      ttsAudio.pause();
+      ttsAudio.removeAttribute("src");
+      ttsAudio.dataset.storyKey = "";
+      ttsAudio.load();
+      ttsAudio.classList.add("hidden");
+    }
+    if (ttsPlayBtn) {
+      ttsPlayBtn.textContent = "朗读当前讲述";
+      ttsPlayBtn.disabled = !latestStoryText;
+    }
+    if (mobileTtsBtn) mobileTtsBtn.disabled = !latestStoryText;
+  }
+
+  function clearRecognitionResult(message = "已清空上次识别结果，请重新识别当前页。") {
+    latestStoryText = "";
+    clearTtsAudio({ rememberReading: true });
+    if (storyOutput) storyOutput.textContent = "正在等待新的识别结果...";
+    if (resultMeta) resultMeta.textContent = "已清空上次识别结果。";
+    if (qualityPanel) qualityPanel.classList.add("hidden");
+    if (qualitySummary) qualitySummary.textContent = "";
+    if (analysisOutput) analysisOutput.textContent = "";
+    if (mobileStory) mobileStory.textContent = "";
+    if (mobileMeta) mobileMeta.textContent = "等待新的识别结果";
+    setStatus(message);
+  }
+
+  function updateAutoScanButton() {
+    if (!toggleAutoScanBtn) return;
+    toggleAutoScanBtn.textContent = autoScanEnabled ? "自动识别：开" : "自动识别：关";
+    toggleAutoScanBtn.setAttribute("aria-pressed", autoScanEnabled ? "true" : "false");
+    toggleAutoScanBtn.classList.toggle("is-active", autoScanEnabled);
+  }
+
+  function setAutoScanEnabled(enabled) {
+    autoScanEnabled = Boolean(enabled);
+    updateAutoScanButton();
+    if (autoScanEnabled) {
+      restartAutoScanIfNeeded();
+      setStatus("自动识别已开启：画面稳定后会自动上传当前页。");
+      showToast("自动识别已开启");
+    } else {
+      stopAutoScan();
+      setStatus("自动识别已关闭，你可以手动识别当前页。");
+      showToast("自动识别已关闭");
+    }
+  }
+
+  function shouldContinueReadingAfterScan() {
+    return Boolean(ttsAudio && !ttsAudio.paused && !ttsAudio.ended && ttsAudio.currentTime > 0);
   }
 
   function toggleMobileResult() {
@@ -212,12 +281,19 @@ window.addEventListener("DOMContentLoaded", async () => {
     }
 
     latestStoryText = String(result?.story_content || "");
+    const shouldAutoReadNewStory = autoPlayTTSAfterScan;
+    clearTtsAudio();
+    autoPlayTTSAfterScan = shouldAutoReadNewStory;
     storyOutput.textContent = latestStoryText || "未返回讲述文本";
     if (ttsPlayBtn) ttsPlayBtn.disabled = !latestStoryText;
     if (mobileTtsBtn) mobileTtsBtn.disabled = !latestStoryText;
     resultMeta.textContent = `识别完成：角色 ${Array.isArray(first["角色"]) ? first["角色"].join("、") || "未识别" : "未识别"} | 场景 ${first["场景"] || "未识别"}`;
 
     updateMobileResult("识别结果已更新", latestStoryText);
+    if (autoPlayTTSAfterScan && latestStoryText) {
+      autoPlayTTSAfterScan = false;
+      playStoryTTS({ forceRegenerate: true, autoplay: true });
+    }
 
     if (quality) {
       qualityPanel.classList.remove("hidden");
@@ -244,16 +320,29 @@ window.addEventListener("DOMContentLoaded", async () => {
     }
   }
 
-  async function playStoryTTS() {
+  async function playStoryTTS(options = {}) {
+    const { forceRegenerate = false, autoplay = true } = options;
     const text = String(latestStoryText || "").trim();
     if (!text) {
       showToast("请先完成一次识别");
       return;
     }
     if (!ttsPlayBtn) return;
+    const storyKey = `${text.length}:${text.slice(0, 24)}:${text.slice(-24)}`;
+    if (!forceRegenerate && ttsAudio?.src && latestStoryAudioKey === storyKey) {
+      try {
+        ttsAudio.classList.remove("hidden");
+        if (autoplay) await ttsAudio.play();
+        return;
+      } catch (error) {
+        showToast(error.message || "播放失败");
+        return;
+      }
+    }
     const oldLabel = ttsPlayBtn.textContent;
     ttsPlayBtn.disabled = true;
     ttsPlayBtn.textContent = "生成语音中...";
+    if (mobileTtsBtn) mobileTtsBtn.disabled = true;
     try {
       const data = await apiRequest("/api/stories/tts", {
         method: "POST",
@@ -262,9 +351,9 @@ window.addEventListener("DOMContentLoaded", async () => {
       const audioUrl = data?.audio_url;
       if (!audioUrl) throw new Error("未返回音频地址");
       if (!ttsAudio) return;
-      ttsAudio.src = audioUrl;
-      ttsAudio.classList.remove("hidden");
-      await ttsAudio.play();
+      latestStoryAudioKey = storyKey;
+      setTtsAudioSource(audioUrl, storyKey);
+      if (autoplay) await ttsAudio.play();
       const timingText = data?.timing?.total_ms ? `，耗时 ${data.timing.total_ms}ms` : "";
       const segmentText = Number(data?.segment_count || 1) > 1 ? `，已分 ${data.segment_count} 段合成` : "";
       showToast(`开始朗读${timingText}${segmentText}`);
@@ -273,6 +362,7 @@ window.addEventListener("DOMContentLoaded", async () => {
     } finally {
       ttsPlayBtn.textContent = oldLabel || "朗读当前讲述";
       ttsPlayBtn.disabled = !latestStoryText;
+      if (mobileTtsBtn) mobileTtsBtn.disabled = !latestStoryText;
     }
   }
 
@@ -290,6 +380,8 @@ window.addEventListener("DOMContentLoaded", async () => {
       video.srcObject = stream;
       syncEmptyHintVisibility();
       captureBtn.disabled = false;
+      if (toggleAutoScanBtn) toggleAutoScanBtn.disabled = false;
+      if (rescanBtn) rescanBtn.disabled = false;
       currentGuideBox = buildGuidePageBox();
       setGuideBox(currentGuideBox);
       setDetectedBox(currentDetectedBox, currentDetectedBox ? "沿用上次识别框" : "后端识别框");
@@ -376,7 +468,7 @@ window.addEventListener("DOMContentLoaded", async () => {
 
   function restartAutoScanIfNeeded() {
     stopAutoScan();
-    if (!stream || autoScanSelect?.value !== "on") return;
+    if (!stream || !autoScanEnabled) return;
     const intervalMs = Number(intervalSelect?.value || 2000);
     autoScanTimer = setInterval(() => {
       scanCurrentFrame({ automatic: true }).catch(() => {});
@@ -414,10 +506,10 @@ window.addEventListener("DOMContentLoaded", async () => {
   }
 
   async function scanCurrentFrame(options = {}) {
-    const { automatic = false } = options;
+    const { automatic = false, force = false, clearBeforeScan = false } = options;
     const now = Date.now();
     if (isScanning) return;
-    if (now - lastCaptureAt < 1200) {
+    if (!force && now - lastCaptureAt < 1200) {
       if (!automatic) showToast("识别过于频繁，请稍后再试");
       return;
     }
@@ -428,16 +520,21 @@ window.addEventListener("DOMContentLoaded", async () => {
 
     currentGuideBox = currentGuideBox || buildGuidePageBox();
     setGuideBox(currentGuideBox);
+    autoPlayTTSAfterScan = shouldContinueReadingAfterScan();
+    if (clearBeforeScan) {
+      clearRecognitionResult("正在重新识别当前页...");
+      lastScannedSignature = "";
+    }
 
     const signature = captureFrameSignature();
     const isStable = updateFrameStability(signature);
-    if (automatic && !isStable) {
+    if (automatic && !force && !isStable) {
       setStatus("自动扫描中：等待画面稳定...");
       return;
     }
 
     const scannedDiff = signatureDiff(signature, lastScannedSignature);
-    if (automatic && scannedDiff <= SIGNATURE_DIFF_THRESHOLD) {
+    if (automatic && !force && scannedDiff <= SIGNATURE_DIFF_THRESHOLD) {
       updateStateBadges({
         pageState: "页面状态：与上个结果接近",
         stabilityText: `稳定帧：${stableFrameCount} / ${STABLE_FRAMES_REQUIRED}`,
@@ -450,6 +547,7 @@ window.addEventListener("DOMContentLoaded", async () => {
     isScanning = true;
     lastCaptureAt = now;
     captureBtn.disabled = true;
+    if (rescanBtn) rescanBtn.disabled = true;
     captureBtn.textContent = automatic ? "自动识别中..." : "识别中...";
     setStatus(automatic ? "自动扫描命中稳定帧，正在上传..." : "正在压缩并上传当前画面...");
 
@@ -490,14 +588,18 @@ window.addEventListener("DOMContentLoaded", async () => {
     } finally {
       isScanning = false;
       captureBtn.disabled = !stream;
+      if (rescanBtn) rescanBtn.disabled = !stream;
       captureBtn.textContent = "识别当前页";
     }
   }
 
   startBtn?.addEventListener("click", startCamera);
   captureBtn?.addEventListener("click", () => scanCurrentFrame({ automatic: false }));
+  toggleAutoScanBtn?.addEventListener("click", () => setAutoScanEnabled(!autoScanEnabled));
+  rescanBtn?.addEventListener("click", () =>
+    scanCurrentFrame({ automatic: false, force: true, clearBeforeScan: true }),
+  );
   ttsPlayBtn?.addEventListener("click", playStoryTTS);
-  autoScanSelect?.addEventListener("change", restartAutoScanIfNeeded);
   intervalSelect?.addEventListener("change", restartAutoScanIfNeeded);
   cameraTabs.forEach((tab) => {
     tab.addEventListener("click", () => switchCameraTab(tab.dataset.cameraTab || "story"));
@@ -523,5 +625,6 @@ window.addEventListener("DOMContentLoaded", async () => {
   });
 
   await ensureAuth();
+  updateAutoScanButton();
   syncEmptyHintVisibility();
 });

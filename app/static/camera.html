@@ -52,6 +52,8 @@
         <div class="camera-actions camera-actions-primary">
           <button id="start-camera" class="btn btn-primary" type="button">启动摄像头</button>
           <button id="capture-frame" class="btn btn-soft" type="button" disabled>识别当前页</button>
+          <button id="toggle-auto-scan" class="btn btn-soft" type="button" disabled aria-pressed="false">自动识别：关</button>
+          <button id="rescan-frame" class="btn btn-soft" type="button" disabled>重新识别</button>
         </div>
         <div class="camera-actions camera-actions-secondary">
           <button id="camera-tts-play" class="btn btn-soft" type="button" disabled>朗读当前讲述</button>
@@ -82,13 +84,6 @@
               <select id="camera-mode" class="select">
                 <option value="fast" selected>快速响应</option>
                 <option value="full">完整生成</option>
-              </select>
-            </label>
-            <label class="field">
-              <span class="field-label">自动扫描</span>
-              <select id="camera-auto-scan" class="select">
-                <option value="off" selected>关闭</option>
-                <option value="on">开启</option>
               </select>
             </label>
             <label class="field">
