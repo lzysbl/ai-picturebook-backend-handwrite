@@ -48,7 +48,7 @@ from app.services.task_progress_service import (
     update_story_task,
 )
 from app.services.tts_service import synthesize_text_to_speech
-from app.services.vision_analysis_service import analyze_images
+from app.services.vision_analysis_service import analyze_image_with_direct_story, analyze_images
 from app.utils.rate_limiter import enforce_rate_limit
 
 router = APIRouter(prefix="/api/stories", tags=["Stories"])
@@ -737,7 +737,7 @@ async def scan_story_page_api(
     normalized_crop_source = (crop_source or "").strip().lower()
     normalized_crop_box = _normalize_crop_box(crop_x, crop_y, crop_width, crop_height)
     live_ai_provider = _normalize_optional_text(settings.live_ai_provider, settings.ai_provider)
-    if normalized_mode not in {"fast", "full"}:
+    if normalized_mode not in {"fast", "full", "direct"}:
         normalized_mode = "fast"
 
     cache_key = _scan_cache_key(
@@ -813,14 +813,8 @@ async def scan_story_page_api(
         stage_started_at = time()
         prepared_path = _enhance_scan_image(scan_path)
         enhance_ms = _elapsed_ms(stage_started_at)
-        stage_started_at = time()
-        analysis_result = await analyze_images([str(prepared_path)], provider_override=live_ai_provider)
-        analysis_ms = _elapsed_ms(stage_started_at)
-        stage_started_at = time()
-        current_page = live_summarize_page_for_live_story(analysis_result)
-        page_summary_ms = _elapsed_ms(stage_started_at)
         recent_pages: list[dict[str, Any]] = []
-        character_registry = current_page.get("roles", [])
+        character_registry: list[str] = []
         session_page_count = 1
         session_key = ""
 
@@ -834,6 +828,36 @@ async def scan_story_page_api(
                 else []
             )
             session_load_ms = _elapsed_ms(stage_started_at)
+
+        if normalized_mode == "direct":
+            stage_started_at = time()
+            direct_result = await analyze_image_with_direct_story(
+                str(prepared_path),
+                provider_override=live_ai_provider,
+                page_no=len(recent_pages) + 1,
+                narration_style=normalized_style,
+                audience_age=normalized_age,
+                extra_prompt=normalized_prompt,
+                recent_pages=recent_pages,
+            )
+            analysis_result = [dict(direct_result.get("analysis") or {})]
+            analysis_result[0].update({"page": len(recent_pages) + 1, "image_path": str(prepared_path)})
+            story_content = str(direct_result.get("story") or "").strip()
+            analysis_ms = _elapsed_ms(stage_started_at)
+
+            stage_started_at = time()
+            current_page = live_summarize_page_for_live_story(analysis_result)
+            page_summary_ms = _elapsed_ms(stage_started_at)
+            character_registry = current_page.get("roles", [])
+            story_ms = 0
+        else:
+            stage_started_at = time()
+            analysis_result = await analyze_images([str(prepared_path)], provider_override=live_ai_provider)
+            analysis_ms = _elapsed_ms(stage_started_at)
+            stage_started_at = time()
+            current_page = live_summarize_page_for_live_story(analysis_result)
+            page_summary_ms = _elapsed_ms(stage_started_at)
+            character_registry = current_page.get("roles", [])
 
         stage_started_at = time()
         if normalized_mode == "full":
@@ -851,7 +875,7 @@ async def scan_story_page_api(
                 character_name=None,
                 fallback_title="实时扫描绘本",
             )
-        else:
+        elif normalized_mode == "fast":
             story_content = live_build_contextual_live_scan_story(
                 recent_pages=recent_pages,
                 current_page=current_page,
@@ -859,7 +883,8 @@ async def scan_story_page_api(
                 audience_age=normalized_age,
                 extra_prompt=normalized_prompt,
             )
-        story_ms = _elapsed_ms(stage_started_at)
+        if normalized_mode != "direct":
+            story_ms = _elapsed_ms(stage_started_at)
 
         if normalized_session_id:
             stage_started_at = time()

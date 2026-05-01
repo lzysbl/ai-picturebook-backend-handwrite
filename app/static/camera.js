@@ -362,7 +362,11 @@ window.addEventListener("DOMContentLoaded", async () => {
     }
     storyOutput.textContent = latestStoryText || "未返回讲述文本";
     updateTtsButtonState();
-    resultMeta.textContent = `识别完成：角色 ${Array.isArray(first["角色"]) ? first["角色"].join("、") || "未识别" : "未识别"} | 场景 ${first["场景"] || "未识别"}`;
+    if (first?.is_picturebook_page === false) {
+      resultMeta.textContent = "未检测到绘本页：请把书页放进引导框";
+    } else {
+      resultMeta.textContent = `识别完成：角色 ${Array.isArray(first["角色"]) ? first["角色"].join("、") || "未识别" : "未识别"} | 场景 ${first["场景"] || "未识别"}`;
+    }
 
     updateMobileResult("识别结果已更新", latestStoryText);
     if (shouldQueueNewStory && latestStoryText) {
@@ -373,7 +377,12 @@ window.addEventListener("DOMContentLoaded", async () => {
     if (quality) {
       qualityPanel.classList.remove("hidden");
       const paper = quality.paper_metrics || {};
-      const modeText = result?.response_mode === "full" ? "完整生成" : "快速响应";
+      const modeText =
+        result?.response_mode === "full"
+          ? "完整生成"
+          : result?.response_mode === "direct"
+            ? "直接讲述"
+            : "快速响应";
       const cropText =
         cropMode === "model_crop"
           ? "后端检测页框"
