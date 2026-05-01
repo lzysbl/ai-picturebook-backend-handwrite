@@ -256,6 +256,7 @@ def _scan_cache_key(
     narration_style: str | None,
     audience_age: str | None,
     response_mode: str,
+    provider: str | None = None,
     crop_box: dict[str, float] | None = None,
 ) -> str:
     digest = hashlib.sha256(image_bytes).hexdigest()
@@ -266,6 +267,7 @@ def _scan_cache_key(
             "style": narration_style or "",
             "age": audience_age or "",
             "mode": response_mode,
+            "provider": provider or "",
             "crop_box": crop_box or {},
         },
         ensure_ascii=False,
@@ -734,6 +736,7 @@ async def scan_story_page_api(
     normalized_mode = (response_mode or "fast").strip().lower()
     normalized_crop_source = (crop_source or "").strip().lower()
     normalized_crop_box = _normalize_crop_box(crop_x, crop_y, crop_width, crop_height)
+    live_ai_provider = _normalize_optional_text(settings.live_ai_provider, settings.ai_provider)
     if normalized_mode not in {"fast", "full"}:
         normalized_mode = "fast"
 
@@ -743,6 +746,7 @@ async def scan_story_page_api(
         narration_style=normalized_style,
         audience_age=normalized_age,
         response_mode=normalized_mode,
+        provider=live_ai_provider,
         crop_box=normalized_crop_box,
     )
     cached = await _get_scan_cache(cache_key)
@@ -757,12 +761,13 @@ async def scan_story_page_api(
         )
         cached_payload = {**cached, "timing": cached_timing}
         logger.info(
-            "scan.timing mode=%s cache_hit=true crop_mode=%s total_ms=%s user_id=%s session=%s",
+            "scan.timing mode=%s cache_hit=true crop_mode=%s total_ms=%s user_id=%s session=%s provider=%s",
             cached_payload.get("response_mode", normalized_mode),
             cached_payload.get("crop_mode", "-"),
             cached_timing["total_ms"],
             current_user.id,
             normalized_session_id or "-",
+            cached_payload.get("provider", live_ai_provider),
         )
         return ApiResponse(success=True, message="实时识别完成（缓存）", data=cached_payload)
 
@@ -809,7 +814,7 @@ async def scan_story_page_api(
         prepared_path = _enhance_scan_image(scan_path)
         enhance_ms = _elapsed_ms(stage_started_at)
         stage_started_at = time()
-        analysis_result = await analyze_images([str(prepared_path)])
+        analysis_result = await analyze_images([str(prepared_path)], provider_override=live_ai_provider)
         analysis_ms = _elapsed_ms(stage_started_at)
         stage_started_at = time()
         current_page = live_summarize_page_for_live_story(analysis_result)
@@ -893,6 +898,7 @@ async def scan_story_page_api(
         "cache_hit": False,
         "response_mode": normalized_mode,
         "crop_mode": crop_mode,
+        "provider": live_ai_provider,
         "read_ms": read_ms,
         "temp_write_ms": temp_write_ms,
         "page_detect_ms": page_detect_ms,
@@ -910,7 +916,7 @@ async def scan_story_page_api(
         (
             "scan.timing mode=%s cache_hit=false crop_mode=%s total_ms=%s "
             "analysis_ms=%s story_ms=%s quality_ms=%s page_detect_ms=%s crop_ms=%s "
-            "enhance_ms=%s session_load_ms=%s session_save_ms=%s user_id=%s session=%s"
+            "enhance_ms=%s session_load_ms=%s session_save_ms=%s user_id=%s session=%s provider=%s"
         ),
         normalized_mode,
         crop_mode,
@@ -925,6 +931,7 @@ async def scan_story_page_api(
         session_save_ms,
         current_user.id,
         normalized_session_id or "-",
+        live_ai_provider,
     )
 
     payload = {
@@ -932,6 +939,7 @@ async def scan_story_page_api(
         "story_content": story_content,
         "quality": quality,
         "response_mode": normalized_mode,
+        "provider": live_ai_provider,
         "crop_mode": crop_mode,
         "crop_box": effective_crop_box,
         "timing": timing,

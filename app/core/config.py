@@ -41,12 +41,19 @@ class Settings(BaseSettings):
     upload_dir: str = Field(default="./uploads", validation_alias="UPLOAD_DIR")
 
     ai_provider: str = Field(default="mock", validation_alias="AI_PROVIDER")
+    live_ai_provider: str | None = Field(default=None, validation_alias="LIVE_AI_PROVIDER")
     qwen_model: str = Field(default="qwen3.6-flash", validation_alias="QWEN_MODEL")
     qwen_base_url: str = Field(
         default="https://dashscope.aliyuncs.com/compatible-mode/v1",
         validation_alias="QWEN_BASE_URL",
     )
     qwen_api_key: str = Field(default="", validation_alias="QWEN_API_KEY")
+    doubao_model: str = Field(default="doubao-seed-2-0-mini-260215", validation_alias="DOUBAO_MODEL")
+    doubao_base_url: str = Field(
+        default="https://ark.cn-beijing.volces.com/api/v3",
+        validation_alias="DOUBAO_BASE_URL",
+    )
+    doubao_api_key: str = Field(default="", validation_alias="DOUBAO_API_KEY")
 
     tts_provider: str = Field(default="none", validation_alias="TTS_PROVIDER")
     tts_max_chars: int = Field(default=420, validation_alias="TTS_MAX_CHARS")
@@ -76,6 +83,8 @@ class Settings(BaseSettings):
         if value is None:
             return None
         if isinstance(value, str) and value.strip().lower() in {"", "none", "null"}:
+            return None
+        if isinstance(value, str) and not value.strip().replace(".", "", 1).isdigit():
             return None
         return value
 

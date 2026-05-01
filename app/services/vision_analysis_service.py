@@ -20,6 +20,7 @@ MAX_CONCURRENCY = 8
 logger = logging.getLogger(__name__)
 
 _qwen_client: AsyncOpenAI | None = None
+_doubao_client: AsyncOpenAI | None = None
 
 
 def _get_qwen_client() -> AsyncOpenAI:
@@ -29,19 +30,29 @@ def _get_qwen_client() -> AsyncOpenAI:
     return _qwen_client
 
 
+def _get_doubao_client() -> AsyncOpenAI:
+    global _doubao_client
+    if _doubao_client is None:
+        _doubao_client = AsyncOpenAI(api_key=settings.doubao_api_key, base_url=settings.doubao_base_url)
+    return _doubao_client
+
+
 async def analyze_images(
     image_paths: list[str],
     progress_callback: ProgressCallback | None = None,
+    provider_override: str | None = None,
 ) -> list[dict[str, Any]]:
     """Analyze uploaded picture-book pages with either mock or Qwen provider."""
 
     if not image_paths:
         return []
 
-    provider = (settings.ai_provider or "mock").strip().lower()
+    provider = (provider_override or settings.ai_provider or "mock").strip().lower()
     logger.info("ai.analyze_images provider=%s image_count=%s", provider, len(image_paths))
     if provider == "qwen":
         return await _analyze_images_qwen(image_paths, progress_callback=progress_callback)
+    if provider == "doubao":
+        return await _analyze_images_doubao(image_paths, progress_callback=progress_callback)
     return _analyze_images_mock(image_paths)
 
 
@@ -128,6 +139,62 @@ async def _analyze_images_qwen(
     return ordered
 
 
+async def _analyze_images_doubao(
+    image_paths: list[str],
+    progress_callback: ProgressCallback | None = None,
+) -> list[dict[str, Any]]:
+    if not settings.doubao_api_key:
+        logger.warning("ai.analyze_images doubao_api_key_missing fallback=mock")
+        return _analyze_images_mock(image_paths)
+
+    total = len(image_paths)
+    semaphore = asyncio.Semaphore(MAX_CONCURRENCY)
+    done_count = 0
+    results: dict[int, dict[str, Any]] = {}
+
+    async def update_progress(page_no: int) -> None:
+        nonlocal done_count
+        done_count += 1
+        if not progress_callback:
+            return
+        maybe = progress_callback(done_count, total, f"recognized page {page_no} ({done_count}/{total})")
+        if maybe is not None:
+            await maybe
+
+    async def worker(page_no: int, image_path: str) -> None:
+        async with semaphore:
+            try:
+                parsed = await _call_doubao_vl_for_one_image(image_path=image_path, page_no=page_no)
+                item = _normalize_vision_json(parsed)
+                item.update({"page": page_no, "image_path": image_path})
+                results[page_no] = item
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("ai.analyze_page_failed provider=doubao page=%s error=%s", page_no, exc)
+                results[page_no] = {
+                    "page": page_no,
+                    "image_path": image_path,
+                    "error": f"doubao analysis failed: {exc}",
+                }
+            finally:
+                await update_progress(page_no)
+
+    tasks = [
+        asyncio.create_task(worker(page_no=idx, image_path=path))
+        for idx, path in enumerate(image_paths, start=1)
+    ]
+    await asyncio.gather(*tasks)
+
+    ordered: list[dict[str, Any]] = []
+    for idx, path in enumerate(image_paths, start=1):
+        ordered.append(
+            results.get(
+                idx,
+                {"page": idx, "image_path": path, "error": "missing recognition result"},
+            )
+        )
+    return ordered
+
+
 async def _call_qwen_vl_for_one_image(image_path: str, page_no: int) -> dict[str, Any]:
     client = _get_qwen_client()
     json_schema = (
@@ -172,6 +239,52 @@ async def _call_qwen_vl_for_one_image(image_path: str, page_no: int) -> dict[str
     if not isinstance(parsed, dict):
         raise ValueError("模型未返回 JSON 对象")
     return parsed
+
+
+async def _call_doubao_vl_for_one_image(image_path: str, page_no: int) -> dict[str, Any]:
+    client = _get_doubao_client()
+    completion = await client.chat.completions.create(
+        model=settings.doubao_model,
+        temperature=0.2,
+        timeout=120,
+        messages=[
+            {
+                "role": "system",
+                "content": (
+                    "You are a picture-book page vision parser. "
+                    "Return only one JSON object, with no markdown or extra explanation."
+                ),
+            },
+            {
+                "role": "user",
+                "content": [
+                    {"type": "image_url", "image_url": {"url": _image_path_to_data_url(image_path)}},
+                    {"type": "text", "text": _build_vision_prompt(page_no)},
+                ],
+            },
+        ],
+    )
+    parsed = _extract_json(completion.choices[0].message.content or "")
+    if not isinstance(parsed, dict):
+        raise ValueError("model did not return a JSON object")
+    return parsed
+
+
+def _build_vision_prompt(page_no: int) -> str:
+    schema = (
+        '{"page":1,"角色":[],"场景":"","动作":[],"情绪":"","关键物体":[],"画面文字":[],'
+        '"is_title_page":false,"detected_title":"","detected_author":""}'
+    )
+    return (
+        f"请分析第 {page_no} 页绘本画面，并严格返回符合以下结构的 JSON：{schema}\n"
+        "要求：\n"
+        "1. 只提取画面中有依据的信息，不要猜测看不见的内容。\n"
+        "2. 角色、动作、关键物体、画面文字必须是数组。\n"
+        "3. 场景和情绪用简短中文短语。\n"
+        "4. 如果能看到书名或作者，写入 detected_title / detected_author；否则返回空字符串。\n"
+        "5. 如果是封面、扉页或标题页，将 is_title_page 设为 true。\n"
+        "6. 不要输出 markdown，不要解释，只输出 JSON。"
+    )
 
 
 def _extract_json(text: str) -> dict[str, Any] | list[Any]:

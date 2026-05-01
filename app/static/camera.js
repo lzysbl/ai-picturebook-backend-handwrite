@@ -54,7 +54,9 @@ window.addEventListener("DOMContentLoaded", async () => {
   let latestStoryText = "";
   let latestStoryAudioKey = "";
   let autoScanEnabled = false;
-  let autoPlayTTSAfterScan = false;
+  let continuousReadingEnabled = false;
+  let ttsQueue = [];
+  let isPreparingQueuedTTS = false;
 
   const STABLE_FRAMES_REQUIRED = 2;
   const SIGNATURE_DIFF_THRESHOLD = 18;
@@ -101,29 +103,50 @@ window.addEventListener("DOMContentLoaded", async () => {
     ttsAudio.classList.remove("hidden");
   }
 
-  function clearTtsAudio(options = {}) {
-    const { rememberReading = false } = options;
-    latestStoryAudioKey = "";
-    if (rememberReading) {
-      autoPlayTTSAfterScan = autoPlayTTSAfterScan || shouldContinueReadingAfterScan();
+  function makeStoryAudioKey(text) {
+    const value = String(text || "");
+    return `${value.length}:${value.slice(0, 24)}:${value.slice(-24)}`;
+  }
+
+  function isAudioPlaying() {
+    return Boolean(ttsAudio && !ttsAudio.paused && !ttsAudio.ended && ttsAudio.currentTime > 0);
+  }
+
+  function updateTtsButtonState() {
+    if (ttsPlayBtn) {
+      ttsPlayBtn.disabled = !latestStoryText || isPreparingQueuedTTS;
+      ttsPlayBtn.textContent = isPreparingQueuedTTS
+        ? "生成语音中..."
+        : ttsQueue.length
+          ? `朗读当前讲述（队列 ${ttsQueue.length}）`
+          : "朗读当前讲述";
     }
-    if (ttsAudio) {
+    if (mobileTtsBtn) {
+      mobileTtsBtn.disabled = !latestStoryText || isPreparingQueuedTTS;
+      mobileTtsBtn.textContent = ttsQueue.length ? `朗读队列(${ttsQueue.length})` : "朗读";
+    }
+  }
+
+  function clearTtsAudio(options = {}) {
+    const { stopCurrent = true, clearQueue = false } = options;
+    latestStoryAudioKey = "";
+    if (clearQueue) {
+      ttsQueue = [];
+    }
+    if (ttsAudio && stopCurrent) {
       ttsAudio.pause();
       ttsAudio.removeAttribute("src");
       ttsAudio.dataset.storyKey = "";
       ttsAudio.load();
       ttsAudio.classList.add("hidden");
     }
-    if (ttsPlayBtn) {
-      ttsPlayBtn.textContent = "朗读当前讲述";
-      ttsPlayBtn.disabled = !latestStoryText;
-    }
-    if (mobileTtsBtn) mobileTtsBtn.disabled = !latestStoryText;
+    updateTtsButtonState();
   }
 
-  function clearRecognitionResult(message = "已清空上次识别结果，请重新识别当前页。") {
+  function clearRecognitionResult(message = "已清空上次识别结果，请重新识别当前页。", options = {}) {
+    const { clearQueue = false } = options;
     latestStoryText = "";
-    clearTtsAudio({ rememberReading: true });
+    clearTtsAudio({ stopCurrent: false, clearQueue });
     if (storyOutput) storyOutput.textContent = "正在等待新的识别结果...";
     if (resultMeta) resultMeta.textContent = "已清空上次识别结果。";
     if (qualityPanel) qualityPanel.classList.add("hidden");
@@ -155,8 +178,60 @@ window.addEventListener("DOMContentLoaded", async () => {
     }
   }
 
-  function shouldContinueReadingAfterScan() {
-    return Boolean(ttsAudio && !ttsAudio.paused && !ttsAudio.ended && ttsAudio.currentTime > 0);
+  async function synthesizeStoryAudio(text) {
+    const data = await apiRequest("/api/stories/tts", {
+      method: "POST",
+      body: JSON.stringify({ text }),
+    });
+    const audioUrl = data?.audio_url;
+    if (!audioUrl) throw new Error("未返回音频地址");
+    return data;
+  }
+
+  async function playAudioUrl(audioUrl, storyKey) {
+    if (!ttsAudio || !audioUrl) return;
+    latestStoryAudioKey = storyKey || "";
+    setTtsAudioSource(audioUrl, storyKey);
+    await ttsAudio.play();
+  }
+
+  async function queueStoryForContinuousReading(text, reason = "next-page") {
+    const cleanText = String(text || "").trim();
+    if (!cleanText || !continuousReadingEnabled) return;
+    const storyKey = makeStoryAudioKey(cleanText);
+    if (ttsQueue.some((item) => item.storyKey === storyKey) || latestStoryAudioKey === storyKey) return;
+
+    isPreparingQueuedTTS = true;
+    updateTtsButtonState();
+    try {
+      const data = await synthesizeStoryAudio(cleanText);
+      ttsQueue.push({
+        storyKey,
+        text: cleanText,
+        audioUrl: data.audio_url,
+      });
+      const segmentText = Number(data?.segment_count || 1) > 1 ? `，分 ${data.segment_count} 段` : "";
+      showToast(`新讲述已加入朗读队列${segmentText}`);
+      if (!isAudioPlaying() && ttsAudio?.paused) {
+        playNextQueuedAudio();
+      }
+    } catch (error) {
+      showToast(error.message || "新讲述语音生成失败");
+    } finally {
+      isPreparingQueuedTTS = false;
+      updateTtsButtonState();
+    }
+  }
+
+  async function playNextQueuedAudio() {
+    if (!ttsQueue.length || isAudioPlaying()) return;
+    const next = ttsQueue.shift();
+    updateTtsButtonState();
+    try {
+      await playAudioUrl(next.audioUrl, next.storyKey);
+    } catch (error) {
+      showToast(error.message || "队列朗读失败");
+    }
   }
 
   function toggleMobileResult() {
@@ -281,18 +356,18 @@ window.addEventListener("DOMContentLoaded", async () => {
     }
 
     latestStoryText = String(result?.story_content || "");
-    const shouldAutoReadNewStory = autoPlayTTSAfterScan;
-    clearTtsAudio();
-    autoPlayTTSAfterScan = shouldAutoReadNewStory;
+    const shouldQueueNewStory = continuousReadingEnabled && (isAudioPlaying() || ttsQueue.length > 0);
+    if (!shouldQueueNewStory) {
+      clearTtsAudio({ stopCurrent: false });
+    }
     storyOutput.textContent = latestStoryText || "未返回讲述文本";
-    if (ttsPlayBtn) ttsPlayBtn.disabled = !latestStoryText;
-    if (mobileTtsBtn) mobileTtsBtn.disabled = !latestStoryText;
+    updateTtsButtonState();
     resultMeta.textContent = `识别完成：角色 ${Array.isArray(first["角色"]) ? first["角色"].join("、") || "未识别" : "未识别"} | 场景 ${first["场景"] || "未识别"}`;
 
     updateMobileResult("识别结果已更新", latestStoryText);
-    if (autoPlayTTSAfterScan && latestStoryText) {
-      autoPlayTTSAfterScan = false;
-      playStoryTTS({ forceRegenerate: true, autoplay: true });
+    if (shouldQueueNewStory && latestStoryText) {
+      queueStoryForContinuousReading(latestStoryText);
+      setStatus("识别完成，新讲述已准备排队朗读，不会打断当前语音。");
     }
 
     if (quality) {
@@ -328,7 +403,7 @@ window.addEventListener("DOMContentLoaded", async () => {
       return;
     }
     if (!ttsPlayBtn) return;
-    const storyKey = `${text.length}:${text.slice(0, 24)}:${text.slice(-24)}`;
+    const storyKey = makeStoryAudioKey(text);
     if (!forceRegenerate && ttsAudio?.src && latestStoryAudioKey === storyKey) {
       try {
         ttsAudio.classList.remove("hidden");
@@ -344,16 +419,17 @@ window.addEventListener("DOMContentLoaded", async () => {
     ttsPlayBtn.textContent = "生成语音中...";
     if (mobileTtsBtn) mobileTtsBtn.disabled = true;
     try {
-      const data = await apiRequest("/api/stories/tts", {
-        method: "POST",
-        body: JSON.stringify({ text }),
-      });
+      continuousReadingEnabled = true;
+      const data = await synthesizeStoryAudio(text);
       const audioUrl = data?.audio_url;
       if (!audioUrl) throw new Error("未返回音频地址");
       if (!ttsAudio) return;
-      latestStoryAudioKey = storyKey;
-      setTtsAudioSource(audioUrl, storyKey);
-      if (autoplay) await ttsAudio.play();
+      if (autoplay) {
+        await playAudioUrl(audioUrl, storyKey);
+      } else {
+        latestStoryAudioKey = storyKey;
+        setTtsAudioSource(audioUrl, storyKey);
+      }
       const timingText = data?.timing?.total_ms ? `，耗时 ${data.timing.total_ms}ms` : "";
       const segmentText = Number(data?.segment_count || 1) > 1 ? `，已分 ${data.segment_count} 段合成` : "";
       showToast(`开始朗读${timingText}${segmentText}`);
@@ -361,8 +437,7 @@ window.addEventListener("DOMContentLoaded", async () => {
       showToast(error.message || "朗读失败");
     } finally {
       ttsPlayBtn.textContent = oldLabel || "朗读当前讲述";
-      ttsPlayBtn.disabled = !latestStoryText;
-      if (mobileTtsBtn) mobileTtsBtn.disabled = !latestStoryText;
+      updateTtsButtonState();
     }
   }
 
@@ -520,9 +595,8 @@ window.addEventListener("DOMContentLoaded", async () => {
 
     currentGuideBox = currentGuideBox || buildGuidePageBox();
     setGuideBox(currentGuideBox);
-    autoPlayTTSAfterScan = shouldContinueReadingAfterScan();
     if (clearBeforeScan) {
-      clearRecognitionResult("正在重新识别当前页...");
+      clearRecognitionResult("正在重新识别当前页...", { clearQueue: false });
       lastScannedSignature = "";
     }
 
@@ -610,6 +684,9 @@ window.addEventListener("DOMContentLoaded", async () => {
     toggleMobileDetailPanel();
   });
   mobileTtsBtn?.addEventListener("click", playStoryTTS);
+  ttsAudio?.addEventListener("ended", () => {
+    playNextQueuedAudio();
+  });
 
   video?.addEventListener("loadedmetadata", syncEmptyHintVisibility);
   video?.addEventListener("playing", syncEmptyHintVisibility);
