@@ -31,3 +31,4 @@ demo_book/
 scripts/build_midterm_report.py
 logs/
 models/piper/
+uploads/tts/
