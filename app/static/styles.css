@@ -1797,7 +1797,7 @@ a {
 
   .camera-actions-primary {
     position: sticky;
-    bottom: calc(max(12px, env(safe-area-inset-bottom)) + 180px);
+    bottom: calc(max(12px, env(safe-area-inset-bottom)) + 152px);
     z-index: 30;
     margin-top: 10px;
     padding: 8px;
