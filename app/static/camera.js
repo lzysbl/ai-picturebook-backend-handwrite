@@ -1,5 +1,17 @@
 window.addEventListener("DOMContentLoaded", async () => {
   if (!initTopbar("camera")) return;
+  document.body.classList.add("camera-page-body");
+
+  function syncMobileNavigation() {
+    const isMobile = window.matchMedia?.("(max-width: 900px)")?.matches;
+    const workspaceNav = document.querySelector(".workspace-nav");
+    const returnNav = document.querySelector(".mobile-return-nav");
+    if (workspaceNav) workspaceNav.hidden = Boolean(isMobile);
+    if (returnNav) returnNav.hidden = !isMobile;
+  }
+
+  syncMobileNavigation();
+  window.addEventListener("resize", syncMobileNavigation);
 
   const startBtn = document.getElementById("start-camera");
   const captureBtn = document.getElementById("capture-frame");

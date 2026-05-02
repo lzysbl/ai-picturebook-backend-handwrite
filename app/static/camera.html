@@ -4,9 +4,9 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <title>实时识别 - AI 绘本故事生成系统</title>
-  <link rel="stylesheet" href="/static/styles.css" />
+  <link rel="stylesheet" href="/static/styles.css?v=camera-mobile-nav-2" />
 </head>
-<body>
+<body class="camera-page-body">
   <div class="page-wrap">
     <header class="topbar">
       <div class="brand">
@@ -29,6 +29,12 @@
       <a data-nav="camera" href="/ui/camera">实时识别</a>
       <a data-nav="history" href="/ui/history">故事历史</a>
     </nav>
+
+    <div class="mobile-return-nav card">
+      <a id="camera-mobile-back" class="mobile-return-link" href="/ui/books">返回</a>
+      <span class="mobile-return-title">实时识别</span>
+      <span class="mobile-return-spacer" aria-hidden="true"></span>
+    </div>
 
     <main class="camera-layout camera-layout-mobile-first">
       <section class="card panel camera-main-panel">
@@ -155,8 +161,8 @@
   </div>
 
   <div id="toast" class="toast"></div>
-  <script src="/static/ui-common.js"></script>
-  <script src="/static/workspace-common.js"></script>
-  <script src="/static/camera.js"></script>
+  <script src="/static/ui-common.js?v=camera-mobile-nav-2"></script>
+  <script src="/static/workspace-common.js?v=camera-mobile-nav-2"></script>
+  <script src="/static/camera.js?v=camera-mobile-nav-2"></script>
 </body>
 </html>

@@ -303,6 +303,10 @@ a {
   color: #19457e;
 }
 
+.mobile-return-nav {
+  display: none;
+}
+
 .panel {
   padding: 16px;
 }
@@ -1556,31 +1560,77 @@ a {
 }
 
 @media (max-width: 900px) {
+  .camera-page-body .workspace-nav {
+    display: none !important;
+  }
+
   .topbar {
-    padding: 14px 16px;
+    padding: 10px 8px 8px;
+    margin-bottom: 8px;
+    justify-content: center;
   }
 
   .topbar .brand-sub,
-  .topbar .link-row {
+  .topbar .link-row,
+  .topbar .brand-badge {
     display: none;
   }
 
-  .workspace-nav {
-    position: sticky;
-    top: 0;
-    z-index: 20;
-    display: flex;
-    overflow-x: auto;
-    gap: 8px;
-    padding: 10px;
-    border-radius: 0 0 18px 18px;
-    margin-inline: calc(var(--page-padding, 16px) * -1);
+  .topbar .brand-title {
+    font-size: 18px;
+    text-align: center;
   }
 
-  .workspace-nav a {
-    flex: 0 0 auto;
-    padding: 10px 14px;
+  .workspace-nav {
+    display: none;
+  }
+
+  .camera-page-body .mobile-return-nav {
+    position: sticky;
+    top: 0;
+    z-index: 40;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    margin: 0 0 10px;
+    padding: 8px;
+    border-radius: 16px;
+    box-shadow: 0 8px 20px rgba(17, 35, 66, 0.1);
+  }
+
+  .mobile-return-link {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 76px;
+    min-height: 38px;
+    padding: 8px 12px;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.82);
+    color: #19457e;
+    font-weight: 700;
     white-space: nowrap;
+  }
+
+  .mobile-return-link::before {
+    content: "‹";
+    margin-right: 4px;
+    font-size: 22px;
+    line-height: 1;
+  }
+
+  .mobile-return-title {
+    flex: 1;
+    text-align: center;
+    color: var(--text);
+    font-size: 15px;
+    font-weight: 800;
+  }
+
+  .mobile-return-spacer {
+    width: 76px;
   }
 
   .camera-main-panel {
@@ -1680,11 +1730,13 @@ a {
 
 @media (max-width: 640px) {
   .page-wrap {
+    width: min(100% - 18px, 100%);
+    padding-top: 8px;
     padding-bottom: 0;
   }
 
   .brand-title {
-    font-size: 22px;
+    font-size: 18px;
   }
 
   .camera-main-panel {
