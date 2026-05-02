@@ -193,6 +193,12 @@ docker compose logs -f app
 
 更新部署可参考 [DEPLOY.md](DEPLOY.md)。
 
+云端如果已经能稳定使用 Git，也可以直接执行：
+
+```bash
+bash deploy.sh
+```
+
 如果服务器网络不稳定，也可以先在本地执行：
 
 ```powershell
