@@ -193,6 +193,14 @@ docker compose logs -f app
 
 更新部署可参考 [DEPLOY.md](DEPLOY.md)。
 
+如果服务器网络不稳定，也可以先在本地执行：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/build_deploy_zip.ps1
+```
+
+部署压缩包会输出到 `release/deploy.zip`，该目录已加入忽略规则，不会影响 `git status`。
+
 ## 真实应用参考
 
 论文中可用于对比的真实产品方向：
