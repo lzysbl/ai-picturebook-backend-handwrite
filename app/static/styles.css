@@ -1597,7 +1597,34 @@ a {
   }
 
   .workspace-nav {
+    position: sticky;
+    top: 0;
+    z-index: 35;
+    display: flex;
+    flex-wrap: nowrap;
+    gap: 8px;
+    margin: 0 0 10px;
+    padding: 8px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    border-radius: 16px;
+    box-shadow: 0 8px 20px rgba(17, 35, 66, 0.08);
+  }
+
+  .workspace-nav::-webkit-scrollbar {
     display: none;
+  }
+
+  .workspace-nav a {
+    flex: 0 0 auto;
+    min-width: 92px;
+    min-height: 40px;
+    padding: 10px 14px;
+    border-radius: 12px;
+    font-size: 14px;
+    white-space: nowrap;
   }
 
   .camera-page-body .mobile-return-nav {
