@@ -1265,6 +1265,15 @@ a {
   line-height: 1.6;
 }
 
+.camera-browser-warning-title {
+  font-weight: 800;
+  margin-bottom: 4px;
+}
+
+.camera-browser-warning-text {
+  color: #805200;
+}
+
 .camera-stage {
   position: relative;
   margin-top: 16px;

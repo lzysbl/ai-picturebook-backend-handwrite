@@ -8,7 +8,6 @@ window.addEventListener("DOMContentLoaded", async () => {
 
   syncMobileNavigation();
   window.addEventListener("resize", syncMobileNavigation);
-  updateBrowserWarning();
 
   const startBtn = document.getElementById("start-camera");
   const captureBtn = document.getElementById("capture-frame");
@@ -54,6 +53,8 @@ window.addEventListener("DOMContentLoaded", async () => {
   const mobileOpenDetailBtn = document.getElementById("camera-mobile-open-detail");
   const mobileTtsBtn = document.getElementById("camera-mobile-tts");
 
+  updateBrowserWarning();
+
   let stream = null;
   let isScanning = false;
   let lastCaptureAt = 0;
@@ -88,14 +89,14 @@ window.addEventListener("DOMContentLoaded", async () => {
     const embedded = detectEmbeddedBrowser();
     if (!embedded) {
       browserWarning.classList.add("hidden");
-      browserWarning.textContent = "";
+      browserWarning.innerHTML = "";
       return;
     }
     browserWarning.classList.remove("hidden");
-    browserWarning.textContent =
+    browserWarning.innerHTML =
       embedded === "wechat"
-        ? "当前正在微信内打开。微信内置浏览器可能无法稳定调用摄像头，建议点击右上角后选择“在浏览器打开”。"
-        : "当前正在 QQ 内打开。QQ 内置浏览器可能无法稳定调用摄像头，建议点击右上角后选择“在浏览器打开”。";
+        ? '<div class="camera-browser-warning-title">微信内打开提醒</div><div class="camera-browser-warning-text">微信内置浏览器可能无法稳定调用摄像头。请点击右上角菜单，选择“在浏览器打开”或“在默认浏览器打开”，再使用实时识别功能。</div>'
+        : '<div class="camera-browser-warning-title">QQ 内打开提醒</div><div class="camera-browser-warning-text">QQ 内置浏览器可能无法稳定调用摄像头。请点击右上角菜单，选择“在浏览器打开”或“在默认浏览器打开”，再使用实时识别功能。</div>';
   }
 
   async function ensureAuth() {
