@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import uuid
+import shutil
 from pathlib import Path
 
 from fastapi import UploadFile
@@ -24,6 +25,23 @@ async def save_upload_file(file: UploadFile, upload_dir: str, book_id: int) -> s
 
     content = await file.read()
     save_path.write_bytes(content)
+    return str(save_path.as_posix())
+
+
+async def save_existing_image_file(source_path: str | Path, upload_dir: str, book_id: int) -> str:
+    """复制已有图片到绘本目录并返回新路径。"""
+
+    source = Path(source_path)
+    if not source.exists() or not source.is_file():
+        raise FileNotFoundError(f"图片文件不存在：{source_path}")
+
+    book_dir = Path(upload_dir) / "books" / str(book_id)
+    book_dir.mkdir(parents=True, exist_ok=True)
+
+    suffix = source.suffix.lower() or ".jpg"
+    filename = f"{uuid.uuid4().hex}{suffix}"
+    save_path = book_dir / filename
+    shutil.copyfile(source, save_path)
     return str(save_path.as_posix())
 
 

@@ -58,12 +58,16 @@
         <div class="camera-actions camera-actions-primary">
           <button id="start-camera" class="btn btn-primary" type="button">启动摄像头</button>
           <button id="capture-frame" class="btn btn-soft" type="button" disabled>识别当前页</button>
-          <button id="toggle-auto-scan" class="btn btn-soft" type="button" disabled aria-pressed="false">自动识别：关</button>
+          <button id="toggle-auto-scan" class="btn btn-soft" type="button" disabled aria-pressed="false">连续识别：关</button>
           <button id="rescan-frame" class="btn btn-soft" type="button" disabled>重新识别</button>
         </div>
         <div class="camera-actions camera-actions-secondary">
           <button id="camera-tts-play" class="btn btn-soft" type="button" disabled>朗读当前讲述</button>
           <audio id="camera-tts-audio" class="camera-tts-audio hidden" controls preload="none"></audio>
+        </div>
+        <div class="camera-actions camera-story-actions">
+          <button id="reset-live-story" class="btn btn-danger-soft" type="button">重置故事书</button>
+          <button id="save-live-story" class="btn btn-soft" type="button" disabled>保存故事记录</button>
         </div>
 
         <details class="camera-settings card">
@@ -93,14 +97,6 @@
                 <option value="full">完整生成</option>
               </select>
             </label>
-            <label class="field">
-              <span class="field-label">扫描间隔</span>
-              <select id="camera-interval" class="select">
-                <option value="1500">1.5 秒</option>
-                <option value="2000" selected>2 秒</option>
-                <option value="3000">3 秒</option>
-              </select>
-            </label>
             <label class="field camera-prompt-field">
               <span class="field-label">额外提示</span>
               <input id="camera-prompt" class="input" type="text" placeholder="例如：突出角色动作" />
@@ -126,12 +122,17 @@
         </div>
 
         <div class="detail-tabs camera-detail-tabs" role="tablist" aria-label="识别结果切换">
-          <button class="detail-tab active" type="button" data-camera-tab="story">讲述结果</button>
+          <button class="detail-tab active" type="button" data-camera-tab="story">当前页文本</button>
+          <button class="detail-tab" type="button" data-camera-tab="total">总故事文本</button>
           <button class="detail-tab" type="button" data-camera-tab="debug">调试信息</button>
         </div>
 
         <section id="camera-story-panel" class="detail-tab-panel active">
           <pre id="camera-story-output" class="story-output">点击“启动摄像头”后，对准绘本页面并选择“识别当前页”。</pre>
+        </section>
+
+        <section id="camera-total-panel" class="detail-tab-panel">
+          <pre id="camera-total-output" class="story-output">开启“连续识别”后，每识别一页都会累积到这里。</pre>
         </section>
 
         <section id="camera-debug-panel" class="detail-tab-panel">

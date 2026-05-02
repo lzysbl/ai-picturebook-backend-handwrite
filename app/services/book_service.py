@@ -55,6 +55,19 @@ async def get_book_by_id_and_user(db: AsyncSession, book_id: int, user_id: int) 
     return book
 
 
+async def get_or_create_book_by_title(
+    db: AsyncSession,
+    user_id: int,
+    title: str,
+) -> Book:
+    stmt = select(Book).where(Book.user_id == user_id, Book.title == title).order_by(Book.id.asc()).limit(1)
+    result = await db.execute(stmt)
+    book = result.scalar_one_or_none()
+    if book:
+        return book
+    return await create_book(db=db, user_id=user_id, title=title)
+
+
 async def delete_book(db: AsyncSession, book_id: int, user_id: int) -> Book | None:
     book = await get_book_by_id_and_user(db, book_id, user_id)
     if not book:

@@ -259,6 +259,13 @@ a {
   background: #fff6f6;
 }
 
+.btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.58;
+  transform: none;
+  box-shadow: none;
+}
+
 .note {
   margin-top: 14px;
   color: var(--text-muted);
@@ -1236,6 +1243,13 @@ a {
   gap: 10px;
 }
 
+.camera-story-actions {
+  margin-top: 10px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: stretch;
+}
+
 .camera-tts-audio {
   width: 100%;
 }
@@ -1362,6 +1376,7 @@ a {
 
 .camera-detail-tabs {
   margin-top: 0;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
 .camera-metrics {
@@ -1651,7 +1666,8 @@ a {
   }
 
   .camera-actions-primary,
-  .camera-actions-secondary {
+  .camera-actions-secondary,
+  .camera-story-actions {
     gap: 8px;
   }
 
@@ -1766,6 +1782,10 @@ a {
 
   .camera-actions-primary .btn {
     min-height: 48px;
+  }
+
+  .camera-story-actions .btn {
+    min-height: 44px;
   }
 
   .camera-settings summary {

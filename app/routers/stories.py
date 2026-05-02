@@ -8,6 +8,7 @@ import json
 import logging
 import tempfile
 import uuid
+from datetime import datetime
 from pathlib import Path
 from time import time
 from typing import Any
@@ -22,10 +23,17 @@ from app.core.redis_client import get_redis
 from app.db.session import SessionLocal, get_db
 from app.routers.users import get_current_user
 from app.schemas.common import ApiResponse
-from app.schemas.story import StoryEvaluateRequest, StoryGenerateData, StoryGenerateRequest, StoryInfo, StoryTTSRequest
-from app.services.book_service import get_book_by_id_and_user
+from app.schemas.story import (
+    LiveScanStorySaveRequest,
+    StoryEvaluateRequest,
+    StoryGenerateData,
+    StoryGenerateRequest,
+    StoryInfo,
+    StoryTTSRequest,
+)
+from app.services.book_service import create_book, get_book_by_id_and_user, update_book_cover_image
 from app.services.eval_service import evaluate_story_full
-from app.services.image_service import list_book_images
+from app.services.image_service import create_book_image_record, list_book_images, save_existing_image_file
 from app.services.live_story_service import (
     build_character_registry as live_build_character_registry,
     build_contextual_live_scan_story as live_build_contextual_live_scan_story,
@@ -66,6 +74,55 @@ except Exception:  # noqa: BLE001
 
 def _elapsed_ms(started_at: float) -> int:
     return max(0, int((time() - started_at) * 1000))
+
+
+def _resolve_user_live_scan_path(path_text: str, user_id: int) -> Path | None:
+    """只允许保存当前用户 live_scans 目录下的实时扫描图。"""
+
+    raw = str(path_text or "").strip().replace("\\", "/")
+    if not raw:
+        return None
+
+    upload_root = Path(settings.upload_dir).resolve()
+    if raw.startswith("/uploads/"):
+        candidate = upload_root / raw.removeprefix("/uploads/")
+    elif raw.startswith("uploads/"):
+        candidate = Path(raw).resolve()
+    else:
+        candidate = Path(raw)
+        if not candidate.is_absolute():
+            candidate = candidate.resolve()
+
+    live_scan_root = (upload_root / "live_scans" / str(user_id)).resolve()
+    candidate = candidate.resolve()
+    try:
+        candidate.relative_to(live_scan_root)
+    except ValueError:
+        return None
+    if not candidate.exists() or not candidate.is_file():
+        return None
+    return candidate
+
+
+def _collect_live_scan_paths(payload: LiveScanStorySaveRequest, user_id: int) -> list[Path]:
+    paths: list[Path] = []
+    seen: set[str] = set()
+
+    raw_paths: list[Any] = list(payload.image_paths)
+    for page in payload.page_stories:
+        if isinstance(page, dict):
+            raw_paths.append(page.get("image_path"))
+
+    for raw_path in raw_paths:
+        resolved = _resolve_user_live_scan_path(str(raw_path or ""), user_id)
+        if resolved is None:
+            continue
+        key = str(resolved)
+        if key in seen:
+            continue
+        seen.add(key)
+        paths.append(resolved)
+    return paths
 
 
 def _normalize_judge_samples(include_judge: bool, judge_samples: int | None) -> int | None:
@@ -721,6 +778,7 @@ async def scan_story_page_api(
     crop_y: float | None = Form(default=None),
     crop_width: float | None = Form(default=None),
     crop_height: float | None = Form(default=None),
+    replace_last_page: bool = Form(default=False),
     include_judge: bool = Form(default=False),
     judge_samples: int | None = Form(default=None),
     current_user=Depends(get_current_user),
@@ -749,7 +807,7 @@ async def scan_story_page_api(
         provider=live_ai_provider,
         crop_box=normalized_crop_box,
     )
-    cached = await _get_scan_cache(cache_key)
+    cached = await _get_scan_cache(cache_key) if not normalized_session_id else None
     if cached is not None:
         cached_timing = dict(cached.get("timing") or {})
         cached_timing.update(
@@ -780,6 +838,7 @@ async def scan_story_page_api(
     page_detect_ms = 0
     crop_ms = 0
     enhance_ms = 0
+    persisted_scan_path: Path | None = None
     analysis_ms = 0
     page_summary_ms = 0
     session_load_ms = 0
@@ -813,7 +872,13 @@ async def scan_story_page_api(
         stage_started_at = time()
         prepared_path = _enhance_scan_image(scan_path)
         enhance_ms = _elapsed_ms(stage_started_at)
+        persisted_dir = Path(settings.upload_dir) / "live_scans" / str(current_user.id)
+        persisted_dir.mkdir(parents=True, exist_ok=True)
+        persisted_scan_path = persisted_dir / f"{uuid.uuid4().hex}.jpg"
+        with Image.open(prepared_path) as persisted_img:
+            persisted_img.convert("RGB").save(persisted_scan_path, format="JPEG", quality=88)
         recent_pages: list[dict[str, Any]] = []
+        context_pages: list[dict[str, Any]] = []
         character_registry: list[str] = []
         session_page_count = 1
         session_key = ""
@@ -828,42 +893,55 @@ async def scan_story_page_api(
                 else []
             )
             session_load_ms = _elapsed_ms(stage_started_at)
+        context_pages = recent_pages[:-1] if replace_last_page and recent_pages else recent_pages
+        current_page_no = len(context_pages) + 1
 
         if normalized_mode == "direct":
             stage_started_at = time()
             direct_result = await analyze_image_with_direct_story(
                 str(prepared_path),
                 provider_override=live_ai_provider,
-                page_no=len(recent_pages) + 1,
+                page_no=current_page_no,
                 narration_style=normalized_style,
                 audience_age=normalized_age,
                 extra_prompt=normalized_prompt,
-                recent_pages=recent_pages,
+                recent_pages=context_pages,
             )
             analysis_result = [dict(direct_result.get("analysis") or {})]
-            analysis_result[0].update({"page": len(recent_pages) + 1, "image_path": str(prepared_path)})
+            analysis_result[0].update(
+                {
+                    "page": current_page_no,
+                    "image_path": str(persisted_scan_path.as_posix()) if persisted_scan_path else str(prepared_path),
+                }
+            )
             story_content = str(direct_result.get("story") or "").strip()
             analysis_ms = _elapsed_ms(stage_started_at)
 
             stage_started_at = time()
             current_page = live_summarize_page_for_live_story(analysis_result)
+            if persisted_scan_path is not None:
+                current_page["image_path"] = str(persisted_scan_path.as_posix())
             page_summary_ms = _elapsed_ms(stage_started_at)
             character_registry = current_page.get("roles", [])
             story_ms = 0
         else:
             stage_started_at = time()
             analysis_result = await analyze_images([str(prepared_path)], provider_override=live_ai_provider)
+            if persisted_scan_path and analysis_result:
+                analysis_result[0]["image_path"] = str(persisted_scan_path.as_posix())
             analysis_ms = _elapsed_ms(stage_started_at)
             stage_started_at = time()
             current_page = live_summarize_page_for_live_story(analysis_result)
+            if persisted_scan_path is not None:
+                current_page["image_path"] = str(persisted_scan_path.as_posix())
             page_summary_ms = _elapsed_ms(stage_started_at)
             character_registry = current_page.get("roles", [])
 
         stage_started_at = time()
         if normalized_mode == "full":
             generation_input = (
-                live_context_pages_to_generation_input(recent_pages, current_page)
-                if recent_pages
+                live_context_pages_to_generation_input(context_pages, current_page)
+                if context_pages
                 else analysis_result
             )
             story_content = await generate_story(
@@ -877,7 +955,7 @@ async def scan_story_page_api(
             )
         elif normalized_mode == "fast":
             story_content = live_build_contextual_live_scan_story(
-                recent_pages=recent_pages,
+                recent_pages=context_pages,
                 current_page=current_page,
                 narration_style=normalized_style,
                 audience_age=normalized_age,
@@ -888,7 +966,10 @@ async def scan_story_page_api(
 
         if normalized_session_id:
             stage_started_at = time()
-            merged_pages = live_merge_scan_session_pages(recent_pages, current_page)
+            if replace_last_page and recent_pages:
+                merged_pages = [*recent_pages[:-1], current_page][-3:]
+            else:
+                merged_pages = live_merge_scan_session_pages(recent_pages, current_page)
             character_registry = live_build_character_registry(merged_pages)
             session_page_count = len(merged_pages)
             await _set_scan_session(
@@ -924,6 +1005,7 @@ async def scan_story_page_api(
         "response_mode": normalized_mode,
         "crop_mode": crop_mode,
         "provider": live_ai_provider,
+        "replace_last_page": replace_last_page,
         "read_ms": read_ms,
         "temp_write_ms": temp_write_ms,
         "page_detect_ms": page_detect_ms,
@@ -967,14 +1049,17 @@ async def scan_story_page_api(
         "provider": live_ai_provider,
         "crop_mode": crop_mode,
         "crop_box": effective_crop_box,
+        "scan_image_path": str(persisted_scan_path.as_posix()) if persisted_scan_path else None,
         "timing": timing,
+        "replace_last_page": replace_last_page,
         "context": {
             "session_id": normalized_session_id or None,
             "recent_page_count": session_page_count,
             "character_registry": character_registry,
         },
     }
-    await _set_scan_cache(cache_key, payload)
+    if not normalized_session_id:
+        await _set_scan_cache(cache_key, payload)
     return ApiResponse(success=True, message="实时识别完成", data=payload)
 
 
@@ -1030,6 +1115,91 @@ async def story_tts_api(
                 "provider": result.provider,
                 "total_ms": total_ms,
             },
+        },
+    )
+
+
+@router.post("/scan/save", response_model=ApiResponse)
+async def save_scan_story_api(
+    payload: LiveScanStorySaveRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(get_current_user),
+) -> ApiResponse:
+    story_text = payload.story_content.strip()
+    if not story_text:
+        raise HTTPException(status_code=400, detail="故事内容不能为空")
+
+    if payload.book_id:
+        book = await get_book_by_id_and_user(db, payload.book_id, current_user.id)
+        if not book:
+            raise HTTPException(status_code=404, detail="归档绘本不存在")
+    else:
+        title = f"实时扫描绘本 {datetime.now():%Y%m%d %H%M%S}"
+        book = await create_book(db=db, user_id=current_user.id, title=title)
+
+    source_scan_paths = _collect_live_scan_paths(payload, current_user.id)
+    existing_images = await list_book_images(db, book.id)
+    next_order = (max((item.image_order for item in existing_images), default=0) + 1) if existing_images else 1
+    saved_image_paths: list[str] = []
+    for index, source_path in enumerate(source_scan_paths, start=next_order):
+        saved_path = await save_existing_image_file(source_path, settings.upload_dir, book.id)
+        await create_book_image_record(
+            db=db,
+            book_id=book.id,
+            image_path=saved_path,
+            image_order=index,
+        )
+        saved_image_paths.append(saved_path)
+
+    if saved_image_paths and not book.cover_image:
+        await update_book_cover_image(db=db, book=book, cover_image=saved_image_paths[0])
+
+    image_analysis = {
+        "source": "live_scan",
+        "session_id": payload.session_id,
+        "response_mode": payload.response_mode,
+        "narration_style": payload.narration_style,
+        "audience_age": payload.audience_age,
+        "page_stories": payload.page_stories,
+        "last_analysis_result": payload.analysis_result,
+        "saved_image_paths": saved_image_paths,
+    }
+    story = await create_story_record(
+        db=db,
+        user_id=current_user.id,
+        book_id=book.id,
+        prompt=payload.prompt or "实时扫描连续讲述",
+        image_analysis=image_analysis,
+        story_content=story_text,
+    )
+    evaluation_analysis = payload.analysis_result or [
+        {
+            "场景": "实时扫描绘本",
+            "角色": [],
+            "关键物体": [],
+            "page_stories": payload.page_stories,
+        }
+    ]
+    quality = await evaluate_story_full(
+        analysis_result=evaluation_analysis,
+        story_content=story_text,
+        include_judge=False,
+        judge_samples=None,
+    )
+    await set_story_quality_cache(
+        story_id=story.id,
+        include_judge=False,
+        judge_samples=None,
+        quality=quality,
+    )
+    return ApiResponse(
+        success=True,
+        message="实时故事已保存",
+        data={
+            "story": StoryInfo.model_validate(story).model_dump(mode="json"),
+            "quality": quality,
+            "book_id": book.id,
+            "image_paths": saved_image_paths,
         },
     )
 
