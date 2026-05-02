@@ -8,6 +8,7 @@ window.addEventListener("DOMContentLoaded", async () => {
 
   syncMobileNavigation();
   window.addEventListener("resize", syncMobileNavigation);
+  updateBrowserWarning();
 
   const startBtn = document.getElementById("start-camera");
   const captureBtn = document.getElementById("capture-frame");
@@ -19,6 +20,7 @@ window.addEventListener("DOMContentLoaded", async () => {
   const saveLiveStoryBtn = document.getElementById("save-live-story");
   const video = document.getElementById("camera-video");
   const canvas = document.getElementById("camera-canvas");
+  const browserWarning = document.getElementById("camera-browser-warning");
   const cameraStage = document.querySelector(".camera-stage");
   const emptyHint = document.getElementById("camera-empty");
   const guideBox = document.getElementById("camera-page-box");
@@ -73,6 +75,28 @@ window.addEventListener("DOMContentLoaded", async () => {
 
   const STABLE_FRAMES_REQUIRED = 2;
   const SIGNATURE_DIFF_THRESHOLD = 18;
+
+  function detectEmbeddedBrowser() {
+    const ua = navigator.userAgent || "";
+    if (/MicroMessenger/i.test(ua)) return "wechat";
+    if (/\bQQ\/|\bMQQBrowser\/|\bQQBrowser\//i.test(ua)) return "qq";
+    return "";
+  }
+
+  function updateBrowserWarning() {
+    if (!browserWarning) return;
+    const embedded = detectEmbeddedBrowser();
+    if (!embedded) {
+      browserWarning.classList.add("hidden");
+      browserWarning.textContent = "";
+      return;
+    }
+    browserWarning.classList.remove("hidden");
+    browserWarning.textContent =
+      embedded === "wechat"
+        ? "当前正在微信内打开。微信内置浏览器可能无法稳定调用摄像头，建议点击右上角后选择“在浏览器打开”。"
+        : "当前正在 QQ 内打开。QQ 内置浏览器可能无法稳定调用摄像头，建议点击右上角后选择“在浏览器打开”。";
+  }
 
   async function ensureAuth() {
     try {
@@ -676,7 +700,14 @@ window.addEventListener("DOMContentLoaded", async () => {
       updateCropBadge("guide_crop");
     } catch (error) {
       showToast("摄像头启动失败，请检查浏览器权限");
-      setStatus(`摄像头启动失败：${error.message || "未知错误"}`);
+      const embedded = detectEmbeddedBrowser();
+      const browserHint =
+        embedded === "wechat"
+          ? "，当前为微信内置浏览器，建议改用系统浏览器打开"
+          : embedded === "qq"
+            ? "，当前为 QQ 内置浏览器，建议改用系统浏览器打开"
+            : "";
+      setStatus(`摄像头启动失败：${error.message || "未知错误"}${browserHint}`);
     }
   }
 

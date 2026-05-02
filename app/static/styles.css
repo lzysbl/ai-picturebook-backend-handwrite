@@ -1254,6 +1254,17 @@ a {
   width: 100%;
 }
 
+.camera-browser-warning {
+  margin-top: 12px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 176, 32, 0.35);
+  background: linear-gradient(180deg, rgba(255, 247, 224, 0.95), rgba(255, 241, 204, 0.92));
+  color: #7a4a00;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
 .camera-stage {
   position: relative;
   margin-top: 16px;
