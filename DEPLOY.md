@@ -1,19 +1,14 @@
-# 部署说明
+# 云端部署说明
 
-本项目推荐使用 Docker Compose 部署。部署后包含三个服务：
+本项目推荐使用 `Docker Compose v2` 部署，默认包含：
 
-- `app`：FastAPI 应用，提供前端页面和后端接口。
-- `db`：MySQL 8.0，保存用户、绘本、图片、故事记录。
-- `redis`：Redis 7，保存任务进度、评分缓存和限流数据。
+- `app`：FastAPI 应用
+- `db`：MySQL 8
+- `redis`：Redis 7
 
 ## 1. 服务器准备
 
-服务器需要安装：
-
-- Docker
-- Docker Compose v2
-
-检查命令：
+确认服务器已安装：
 
 ```bash
 docker --version
@@ -22,7 +17,7 @@ docker compose version
 
 ## 2. 准备环境变量
 
-复制环境变量模板：
+复制模板：
 
 ```bash
 cp .env.example .env
@@ -33,85 +28,99 @@ cp .env.example .env
 ```env
 APP_ENV=production
 APP_DEBUG=false
-SECRET_KEY=换成一段足够长的随机字符串
+SECRET_KEY=replace_with_a_long_random_secret
 
 AI_PROVIDER=qwen
-QWEN_MODEL=qwen3.6-plus
-QWEN_API_KEY=你的阿里云百炼APIKey
+LIVE_AI_PROVIDER=doubao
+QWEN_API_KEY=your_qwen_key
+DOUBAO_API_KEY=your_doubao_key
 
 JUDGE_ENABLED=true
 JUDGE_MODEL=qwen3.6-plus
 JUDGE_SAMPLES=1
 
-MYSQL_ROOT_PASSWORD=换成你的MySQL容器密码
+TTS_PROVIDER=edge
+EDGE_TTS_VOICE=zh-CN-XiaoxiaoNeural
+
+MYSQL_ROOT_PASSWORD=replace_mysql_password
 MYSQL_DATABASE=ai_story
 APP_PORT=8001
 ```
 
 说明：
 
-- `docker-compose.yml` 会自动把应用内数据库地址改成 `db` 容器地址。
-- 上传图片保存在宿主机的 `uploads/` 目录。
-- 日志保存在宿主机的 `logs/` 目录。
-- `.env` 不要提交到 GitHub。
+- 普通绘本生成与实时识别可以使用不同模型
+- `uploads/` 用于保存运行期图片和音频
+- `logs/` 用于保存日志与实验数据
+- `.env` 不应提交到 Git
 
-## 3. 启动服务
-
-在项目根目录执行：
+## 3. 首次启动
 
 ```bash
 docker compose up -d --build
-```
-
-查看容器：
-
-```bash
 docker compose ps
-```
-
-查看日志：
-
-```bash
 docker compose logs -f app
 ```
 
-## 4. 访问系统
+## 4. 访问地址
 
-如果服务器安全组已经放行 `8001` 端口，可以访问：
-
-```text
-http://服务器公网IP:8001/ui/login
-```
-
-接口文档：
-
-```text
-http://服务器公网IP:8001/docs
-```
-
-健康检查：
-
-```text
-http://服务器公网IP:8001/health
-```
+- 登录页：`http://服务器IP:8001/ui/login`
+- 实时识别：`http://服务器IP:8001/ui/camera`
+- 接口文档：`http://服务器IP:8001/docs`
+- 健康检查：`http://服务器IP:8001/health`
 
 ## 5. 更新部署
 
-拉取或上传新代码后执行：
+如果服务器可以直接拉 Git：
 
 ```bash
-docker compose up -d --build
+git pull
+rm -rf uploads/tts/*
+mkdir -p uploads/tts
+docker rm -f ai-picturebook-app 2>/dev/null || true
+docker compose build app
+docker compose up -d app
+docker logs -f ai-picturebook-app
 ```
 
-## 6. 停止服务
+如果服务器无法直接访问 GitHub，可以本地打包代码后上传再执行：
 
-停止容器但保留数据库数据：
+```bash
+rm -rf uploads/tts/*
+mkdir -p uploads/tts
+docker rm -f ai-picturebook-app 2>/dev/null || true
+docker compose build app
+docker compose up -d app
+docker logs -f ai-picturebook-app
+```
+
+## 6. 实验日志与指标导出
+
+扫描与 TTS 指标在日志中记录：
+
+```bash
+grep -E "scan.timing|scan.stream_timing|tts.timing" logs/app.log
+```
+
+导出论文实验表格：
+
+```bash
+python scripts/export_runtime_metrics.py
+```
+
+输出目录：
+
+```text
+reports/runtime_metrics/
+```
+
+## 7. 停止服务
 
 ```bash
 docker compose down
 ```
 
-如果连 MySQL 和 Redis 数据卷也要删除：
+如果连数据库卷一起删除：
 
 ```bash
 docker compose down -v
@@ -119,10 +128,12 @@ docker compose down -v
 
 生产环境不要轻易执行 `docker compose down -v`。
 
-## 7. 论文和答辩可描述内容
-
-部署架构可以这样描述：
+## 8. 论文答辩可用描述
 
 ```text
-系统采用容器化部署方式，将 FastAPI 应用、MySQL 数据库和 Redis 缓存服务拆分为独立容器，通过 Docker Compose 统一编排。应用容器负责提供前端页面、REST API 和 AI 绘本生成能力；MySQL 负责持久化用户、绘本、图片和故事记录；Redis 负责异步任务进度、评分缓存和接口限流。该部署方式提升了系统环境一致性，便于迁移到云服务器进行演示和后续扩展。
+系统采用容器化部署方式，将 FastAPI 应用、MySQL 数据库和 Redis 缓存服务拆分为独立容器，
+通过 Docker Compose 统一编排。应用容器负责提供前端页面、REST API、实时绘本识别、
+讲述生成与语音朗读能力；MySQL 负责用户、绘本、图片与故事记录持久化；Redis 负责
+扫描缓存、会话上下文与限流控制。该部署方式提升了环境一致性，便于迁移到云服务器
+进行演示，并支持后续扩展与实验复现。
 ```

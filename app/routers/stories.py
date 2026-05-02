@@ -3,8 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import hashlib
-import json
 import logging
 import tempfile
 import uuid
@@ -14,12 +12,11 @@ from time import time
 from typing import Any
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
-import numpy as np
-from PIL import Image, ImageEnhance, ImageFilter, ImageOps
+from fastapi.responses import StreamingResponse
+from PIL import Image
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
-from app.core.redis_client import get_redis
 from app.db.session import SessionLocal, get_db
 from app.routers.users import get_current_user
 from app.schemas.common import ApiResponse
@@ -41,6 +38,7 @@ from app.services.live_story_service import (
     merge_scan_session_pages as live_merge_scan_session_pages,
     summarize_page_for_live_story as live_summarize_page_for_live_story,
 )
+from app.services import live_scan_runtime_service as live_scan_runtime
 from app.services.story_generation_service import generate_story, generate_story_from_images
 from app.services.story_quality_cache_service import clear_story_quality_cache, get_story_quality_cache, set_story_quality_cache
 from app.services.story_service import (
@@ -56,24 +54,11 @@ from app.services.task_progress_service import (
     update_story_task,
 )
 from app.services.tts_service import synthesize_text_to_speech
-from app.services.vision_analysis_service import analyze_image_with_direct_story, analyze_images
+from app.services.vision_analysis_service import analyze_image_with_direct_story, analyze_images, stream_image_direct_story
 from app.utils.rate_limiter import enforce_rate_limit
 
 router = APIRouter(prefix="/api/stories", tags=["Stories"])
 logger = logging.getLogger(__name__)
-
-SCAN_CACHE_TTL_SECONDS = 120
-SCAN_SESSION_TTL_SECONDS = 900
-_local_scan_cache: dict[str, tuple[float, dict[str, Any]]] = {}
-_local_scan_sessions: dict[str, tuple[float, dict[str, Any]]] = {}
-try:
-    import cv2  # type: ignore
-except Exception:  # noqa: BLE001
-    cv2 = None
-
-
-def _elapsed_ms(started_at: float) -> int:
-    return max(0, int((time() - started_at) * 1000))
 
 
 def _resolve_user_live_scan_path(path_text: str, user_id: int) -> Path | None:
@@ -364,6 +349,22 @@ def _normalize_crop_box(
     }
 
 
+def _sse_event(event_type: str, data: dict[str, Any]) -> str:
+    payload = {"type": event_type, **data}
+    return f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
+
+
+def _clean_live_scan_stream_text(text: str) -> str:
+    cleaned = (text or "").strip()
+    if not cleaned:
+        return ""
+    cleaned = cleaned.removeprefix("```").removesuffix("```").strip()
+    for prefix in ("讲述：", "故事：", "当前页：", "直接讲述："):
+        if cleaned.startswith(prefix):
+            cleaned = cleaned[len(prefix) :].strip()
+    return cleaned
+
+
 def _detect_page_box_with_opencv(image_path: Path) -> dict[str, float] | None:
     if cv2 is None:
         return None
@@ -543,6 +544,24 @@ async def _set_scan_session(cache_key: str, payload: dict[str, Any]) -> None:
         await redis.set(cache_key, json.dumps(payload, ensure_ascii=False), ex=SCAN_SESSION_TTL_SECONDS)
         return
     _local_scan_sessions[cache_key] = (time() + SCAN_SESSION_TTL_SECONDS, payload)
+
+
+# Rebind runtime helpers to the dedicated service so the router only owns API flow.
+_elapsed_ms = live_scan_runtime.elapsed_ms
+_resolve_user_live_scan_path = live_scan_runtime.resolve_user_live_scan_path
+_collect_live_scan_paths = live_scan_runtime.collect_live_scan_paths
+_scan_cache_key = live_scan_runtime.scan_cache_key
+_normalize_crop_box = live_scan_runtime.normalize_crop_box
+_sse_event = live_scan_runtime.sse_event
+_clean_live_scan_stream_text = live_scan_runtime.clean_live_scan_stream_text
+_detect_page_box_with_opencv = live_scan_runtime.detect_page_box_with_opencv
+_crop_image_to_temp = live_scan_runtime.crop_image_to_temp
+_enhance_scan_image = live_scan_runtime.enhance_scan_image
+_get_scan_cache = live_scan_runtime.get_scan_cache
+_set_scan_cache = live_scan_runtime.set_scan_cache
+_scan_session_key = live_scan_runtime.scan_session_key
+_get_scan_session = live_scan_runtime.get_scan_session
+_set_scan_session = live_scan_runtime.set_scan_session
 
 
 async def _generate_with_pipeline(
@@ -853,15 +872,18 @@ async def scan_story_page_api(
         temp_write_ms = _elapsed_ms(stage_started_at)
 
         stage_started_at = time()
-        if normalized_crop_source != "detected":
+        if normalized_crop_source == "guide" and normalized_crop_box is not None:
+            effective_crop_box = normalized_crop_box
+            crop_mode = "guide_crop"
+        elif normalized_crop_source == "detected":
+            crop_mode = "frontend_crop"
+        else:
             opencv_crop_box = _detect_page_box_with_opencv(tmp_path)
             if opencv_crop_box is not None:
                 effective_crop_box = opencv_crop_box
                 crop_mode = "model_crop"
             elif normalized_crop_box is not None:
                 crop_mode = "guide_crop"
-        else:
-            crop_mode = "frontend_crop"
         page_detect_ms = _elapsed_ms(stage_started_at)
 
         stage_started_at = time()
@@ -926,7 +948,11 @@ async def scan_story_page_api(
             story_ms = 0
         else:
             stage_started_at = time()
-            analysis_result = await analyze_images([str(prepared_path)], provider_override=live_ai_provider)
+            analysis_result = await analyze_images(
+                [str(prepared_path)],
+                provider_override=live_ai_provider,
+                compact=normalized_mode == "fast",
+            )
             if persisted_scan_path and analysis_result:
                 analysis_result[0]["image_path"] = str(persisted_scan_path.as_posix())
             analysis_ms = _elapsed_ms(stage_started_at)
@@ -1061,6 +1087,270 @@ async def scan_story_page_api(
     if not normalized_session_id:
         await _set_scan_cache(cache_key, payload)
     return ApiResponse(success=True, message="实时识别完成", data=payload)
+
+
+@router.post("/scan/stream")
+async def stream_scan_story_page_api(
+    request: Request,
+    image: UploadFile = File(...),
+    session_id: str | None = Form(default=None),
+    prompt: str | None = Form(default=None),
+    narration_style: str | None = Form(default="温柔"),
+    audience_age: str | None = Form(default="3-6"),
+    crop_source: str | None = Form(default=None),
+    crop_x: float | None = Form(default=None),
+    crop_y: float | None = Form(default=None),
+    crop_width: float | None = Form(default=None),
+    crop_height: float | None = Form(default=None),
+    response_mode: str | None = Form(default="direct"),
+    replace_last_page: bool = Form(default=False),
+    include_judge: bool = Form(default=False),
+    judge_samples: int | None = Form(default=None),
+    current_user=Depends(get_current_user),
+) -> StreamingResponse:
+    total_started_at = time()
+    image_bytes = await image.read()
+    read_ms = _elapsed_ms(total_started_at)
+    suffix = Path(image.filename or "frame.jpg").suffix or ".jpg"
+    normalized_session_id = (session_id or "").strip()
+    normalized_prompt = _normalize_optional_text(prompt)
+    normalized_style = _normalize_optional_text(narration_style, "温柔")
+    normalized_age = _normalize_optional_text(audience_age, "3-6")
+    normalized_crop_source = (crop_source or "").strip().lower()
+    normalized_crop_box = _normalize_crop_box(crop_x, crop_y, crop_width, crop_height)
+    live_ai_provider = _normalize_optional_text(settings.live_ai_provider, settings.ai_provider)
+    normalized_mode = (response_mode or "direct").strip().lower()
+    stream_mode = "fast_stream" if normalized_mode == "fast" else "direct_stream"
+
+    async def event_generator():
+        tmp_path: Path | None = None
+        scan_path: Path | None = None
+        prepared_path: Path | None = None
+        persisted_scan_path: Path | None = None
+        crop_mode = "full_frame"
+        effective_crop_box = normalized_crop_box
+        temp_write_ms = 0
+        page_detect_ms = 0
+        crop_ms = 0
+        enhance_ms = 0
+        session_load_ms = 0
+        session_save_ms = 0
+        analysis_ms = 0
+        quality_ms = 0
+        first_delta_ms: int | None = None
+        story_chunks: list[str] = []
+        analysis_result: list[dict[str, Any]] = []
+        current_page: dict[str, Any] = {}
+        context_pages: list[dict[str, Any]] = []
+        recent_pages: list[dict[str, Any]] = []
+        character_registry: list[str] = []
+        session_page_count = 1
+        session_key = ""
+
+        try:
+            stage_started_at = time()
+            with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
+                tmp.write(image_bytes)
+                tmp_path = Path(tmp.name)
+            temp_write_ms = _elapsed_ms(stage_started_at)
+
+            stage_started_at = time()
+            if normalized_crop_source == "guide" and normalized_crop_box is not None:
+                effective_crop_box = normalized_crop_box
+                crop_mode = "guide_crop"
+            elif normalized_crop_source == "detected":
+                crop_mode = "frontend_crop"
+            else:
+                opencv_crop_box = _detect_page_box_with_opencv(tmp_path)
+                if opencv_crop_box is not None:
+                    effective_crop_box = opencv_crop_box
+                    crop_mode = "model_crop"
+                elif normalized_crop_box is not None:
+                    crop_mode = "guide_crop"
+            page_detect_ms = _elapsed_ms(stage_started_at)
+
+            stage_started_at = time()
+            scan_path, crop_result_mode = _crop_image_to_temp(tmp_path, effective_crop_box)
+            if crop_result_mode == "full_frame":
+                crop_mode = "full_frame"
+            crop_ms = _elapsed_ms(stage_started_at)
+
+            stage_started_at = time()
+            prepared_path = _enhance_scan_image(scan_path)
+            enhance_ms = _elapsed_ms(stage_started_at)
+
+            persisted_dir = Path(settings.upload_dir) / "live_scans" / str(current_user.id)
+            persisted_dir.mkdir(parents=True, exist_ok=True)
+            persisted_scan_path = persisted_dir / f"{uuid.uuid4().hex}.jpg"
+            with Image.open(prepared_path) as persisted_img:
+                persisted_img.convert("RGB").save(persisted_scan_path, format="JPEG", quality=88)
+
+            if normalized_session_id:
+                stage_started_at = time()
+                session_key = _scan_session_key(current_user.id, normalized_session_id)
+                session_payload = await _get_scan_session(session_key) or {}
+                recent_pages = (
+                    session_payload.get("recent_pages", [])
+                    if isinstance(session_payload.get("recent_pages", []), list)
+                    else []
+                )
+                session_load_ms = _elapsed_ms(stage_started_at)
+            context_pages = recent_pages[:-1] if replace_last_page and recent_pages else recent_pages
+            current_page_no = len(context_pages) + 1
+
+            yield _sse_event(
+                "meta",
+                {
+                    "response_mode": stream_mode,
+                    "provider": live_ai_provider,
+                    "crop_mode": crop_mode,
+                    "crop_box": effective_crop_box,
+                    "scan_image_path": str(persisted_scan_path.as_posix()),
+                    "replace_last_page": replace_last_page,
+                    "context": {
+                        "session_id": normalized_session_id or None,
+                        "recent_page_count": current_page_no,
+                    },
+                },
+            )
+
+            stage_started_at = time()
+            async for delta in stream_image_direct_story(
+                str(prepared_path),
+                provider_override=live_ai_provider,
+                page_no=current_page_no,
+                narration_style=normalized_style,
+                audience_age=normalized_age,
+                extra_prompt=normalized_prompt,
+                recent_pages=context_pages,
+            ):
+                if first_delta_ms is None:
+                    first_delta_ms = _elapsed_ms(stage_started_at)
+                story_chunks.append(delta)
+                yield _sse_event("delta", {"text": delta})
+            analysis_ms = _elapsed_ms(stage_started_at)
+
+            story_content = _clean_live_scan_stream_text("".join(story_chunks))
+            analysis_result = [
+                {
+                    "page": current_page_no,
+                    "image_path": str(persisted_scan_path.as_posix()),
+                    "角色": [],
+                    "场景": "实时扫描绘本",
+                    "动作": [],
+                    "情绪": "温暖",
+                    "关键物体": [],
+                    "画面文字": [],
+                    "is_picturebook_page": not story_content.startswith("请将绘本页放入引导框"),
+                    "page_confidence": 0.6 if story_content else 0.0,
+                }
+            ]
+            current_page = live_summarize_page_for_live_story(analysis_result)
+            current_page["story"] = story_content
+            current_page["image_path"] = str(persisted_scan_path.as_posix())
+
+            if normalized_session_id:
+                stage_started_at = time()
+                if replace_last_page and recent_pages:
+                    merged_pages = [*recent_pages[:-1], current_page][-3:]
+                else:
+                    # Stream mode has intentionally lightweight analysis, so do not
+                    # collapse pages by summary similarity here.
+                    merged_pages = [*recent_pages, current_page][-3:]
+                character_registry = live_build_character_registry(merged_pages)
+                session_page_count = len(merged_pages)
+                await _set_scan_session(
+                    session_key,
+                    {
+                        "recent_pages": merged_pages,
+                        "character_registry": character_registry,
+                    },
+                )
+                session_save_ms = _elapsed_ms(stage_started_at)
+            else:
+                character_registry = live_build_character_registry([current_page])
+
+            stage_started_at = time()
+            quality = await evaluate_story_full(
+                analysis_result=analysis_result,
+                story_content=story_content,
+                include_judge=include_judge,
+                judge_samples=judge_samples,
+            )
+            quality_ms = _elapsed_ms(stage_started_at)
+
+            total_ms = _elapsed_ms(total_started_at)
+            timing = {
+                "cache_hit": False,
+                "response_mode": stream_mode,
+                "crop_mode": crop_mode,
+                "provider": live_ai_provider,
+                "replace_last_page": replace_last_page,
+                "read_ms": read_ms,
+                "temp_write_ms": temp_write_ms,
+                "page_detect_ms": page_detect_ms,
+                "crop_ms": crop_ms,
+                "enhance_ms": enhance_ms,
+                "analysis_ms": analysis_ms,
+                "first_delta_ms": first_delta_ms,
+                "story_ms": 0,
+                "session_load_ms": session_load_ms,
+                "session_save_ms": session_save_ms,
+                "quality_ms": quality_ms,
+                "total_ms": total_ms,
+            }
+            payload = {
+                "analysis_result": analysis_result,
+                "story_content": story_content,
+                "quality": quality,
+                "response_mode": "direct_stream",
+                "provider": live_ai_provider,
+                "crop_mode": crop_mode,
+                "crop_box": effective_crop_box,
+                "scan_image_path": str(persisted_scan_path.as_posix()),
+                "timing": timing,
+                "replace_last_page": replace_last_page,
+                "context": {
+                    "session_id": normalized_session_id or None,
+                    "recent_page_count": session_page_count,
+                    "character_registry": character_registry,
+                },
+            }
+            logger.info(
+                (
+                    "scan.stream_timing mode=%s crop_mode=%s total_ms=%s "
+                    "first_delta_ms=%s analysis_ms=%s quality_ms=%s session_load_ms=%s "
+                    "session_save_ms=%s user_id=%s session=%s provider=%s"
+                ),
+                stream_mode,
+                crop_mode,
+                total_ms,
+                first_delta_ms,
+                analysis_ms,
+                quality_ms,
+                session_load_ms,
+                session_save_ms,
+                current_user.id,
+                normalized_session_id or "-",
+                live_ai_provider,
+            )
+            yield _sse_event("done", payload)
+        except Exception as exc:  # noqa: BLE001
+            logger.exception("scan.stream_failed user_id=%s", current_user.id)
+            yield _sse_event("error", {"message": str(exc) or "stream scan failed"})
+        finally:
+            if prepared_path and prepared_path.exists():
+                prepared_path.unlink(missing_ok=True)
+            if scan_path and tmp_path and scan_path != tmp_path and scan_path.exists():
+                scan_path.unlink(missing_ok=True)
+            if tmp_path and tmp_path.exists():
+                tmp_path.unlink(missing_ok=True)
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
 
 
 @router.post("/tts", response_model=ApiResponse)

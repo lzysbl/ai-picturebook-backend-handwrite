@@ -28,6 +28,10 @@ def test_live_scan_story_reads_like_storytelling() -> None:
         extra_prompt="突出回家的感觉",
     )
 
-    assert "讲一讲这一页的小故事" in story
-    assert "这些小细节像是在悄悄提醒我们" in story
-    assert "如果特别留意的话" in story
+    assert "故事从森林小路慢慢开始" in story
+    assert "小兔子望着远处" in story
+    assert "一盏小灯" in story
+    assert "回家" in story
+    assert "突出回家的感觉" in story
+    assert "识别结果" not in story
+    assert "图像中" not in story

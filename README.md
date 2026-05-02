@@ -1,221 +1,204 @@
 # 移动端实时绘本识别与智能讲述系统
 
-面向真实亲子共读场景的毕业设计项目。系统通过手机浏览器调用摄像头，连续观察绘本页面，在页面稳定后自动识别当前页，并结合前序页面上下文生成适龄、连贯、可朗读的讲述文本。
+面向毕业论文与演示场景的多模态绘本辅助阅读系统。项目通过手机浏览器调用摄像头，识别当前绘本页，生成适龄讲述文本，并支持连续翻页上下文、语音朗读、延迟记录和云端部署。
 
-一句话概括：这不是“上传图片生成故事”，而是一个面向移动端连续翻页场景的实时视觉理解与低时延讲述系统。
+## 项目定位
 
----
+本系统的重点不是“上传图片后生成一段故事”，而是面向真实亲子共读流程的实时辅助阅读：
 
-## 功能亮点
+- 手机端直接调用摄像头，无需单独安装 App
+- 支持当前页识别、连续翻页讲述、重新识别、保存故事记录
+- 支持流式直接讲述与低延迟快速响应
+- 支持 TTS 朗读与运行时延迟统计
+- 支持本地开发与 Docker 云端部署
 
-- 手机浏览器实时调用摄像头，无需原生 App。
-- 页面稳定检测与重复页抑制，避免翻页中间态频繁识别。
-- 前端引导框 + 后端 OpenCV 页框检测，自动裁剪绘本页区域。
-- VLM 提取角色、场景、动作、关键物体、画面文字等页级信息。
-- 基于 `session_id` 维护最近页面，实现连续翻页讲述。
-- 支持快速响应与完整生成两种模式。
-- 支持 Edge TTS 一键朗读当前讲述。
-- 手机端使用底部故事抽屉，边拍边看/听更方便。
-- 记录识别、裁剪、讲述、评估、TTS 等阶段耗时，便于论文汇报。
+论文方向建议表述为：`多模态实时绘本辅助阅读系统`。
 
----
+## 核心能力
+
+- 实时摄像头识别：浏览器采集视频帧，结合引导框与后端裁剪识别绘本页
+- 多种响应模式：
+  - `fast`：紧凑识别 + 快速讲述
+  - `direct`：直接讲述
+  - `full`：完整生成
+- 连续故事上下文：用 `session_id` 维护最近页内容，生成总故事文本
+- 朗读能力：支持 `edge-tts`，可扩展 `piper`
+- 实验指标记录：扫描、流式首字延迟、TTS 时延都会写入日志
+- 云端部署：支持 `docker compose` 一键启动
 
 ## 系统流程
 
 ```text
-摄像头取景
-  -> 稳定帧检测
-  -> 页框裁剪 / 整图兜底
-  -> 多模态页面理解
-  -> 页级上下文记忆
-  -> 快速讲述 / 完整生成
-  -> 前端展示 / Edge TTS 朗读
-  -> 日志记录时延
+手机摄像头取景
+-> 页面稳定检测
+-> 引导框 / OpenCV 裁剪
+-> 视觉模型识别
+-> 当前页讲述 / 总故事累积
+-> TTS 朗读
+-> 日志记录与实验统计
 ```
-
-裁剪优先级：
-
-```text
-后端 OpenCV 页框 > 前端引导框 > 整图识别
-```
-
----
 
 ## 技术栈
 
-- 后端：FastAPI、Python 3.11、SQLAlchemy Async、Pydantic
-- 前端：原生 HTML / CSS / JavaScript
+- 后端：FastAPI、Pydantic、SQLAlchemy Async
+- 前端：HTML、CSS、Vanilla JavaScript
 - 数据：SQLite / MySQL、Redis
-- 视觉：Pillow、OpenCV、Qwen VL 兼容接口
-- 语音：Edge TTS，Piper 离线备用
+- 视觉模型：Qwen / Doubao（实时识别可单独配置）
+- 语音：Edge TTS、Piper
 - 部署：Docker、Docker Compose v2
 
----
+## 目录结构
 
-## 快速运行
+```text
+app/
+  core/        配置、日志、Redis
+  db/          数据库会话与初始化
+  models/      ORM 模型
+  routers/     API 路由
+  schemas/     请求/响应模型
+  services/    视觉识别、实时扫描、故事生成、TTS、评估
+  static/      前端页面与脚本
+
+scripts/       论文辅助脚本、模型下载、日志导出
+tests/         单元测试
+uploads/       运行期图片与语音
+logs/          应用日志
+```
+
+## 快速开始
+
+1. 安装依赖
 
 ```bash
 pip install -r requirements.txt
+```
+
+2. 复制环境变量
+
+```bash
 cp .env.example .env
+```
+
+Windows PowerShell:
+
+```powershell
+Copy-Item .env.example .env
+```
+
+3. 启动项目
+
+```bash
 uvicorn app.main:app --reload --port 8001
 ```
 
-访问：
+4. 打开页面
 
-- 实时识别：`http://127.0.0.1:8001/ui/camera`
 - 登录页：`http://127.0.0.1:8001/ui/login`
+- 实时识别：`http://127.0.0.1:8001/ui/camera`
 - 接口文档：`http://127.0.0.1:8001/docs`
 
-最小本地配置：
+## 环境变量说明
 
-```env
-DATABASE_URL=sqlite+aiosqlite:///./ai_story.db
-AI_PROVIDER=mock
-REDIS_ENABLED=false
-TTS_PROVIDER=edge
-EDGE_TTS_VOICE=zh-CN-XiaoxiaoNeural
-EDGE_TTS_RATE=-5%
-EDGE_TTS_VOLUME=+0%
-```
-
-使用 Qwen 时补充：
+普通绘本生成与实时识别支持分离配置：
 
 ```env
 AI_PROVIDER=qwen
+LIVE_AI_PROVIDER=doubao
 QWEN_MODEL=qwen3.6-flash
-QWEN_API_KEY=你的 API Key
+DOUBAO_MODEL=doubao-seed-2-0-mini-260215
 ```
 
----
+TTS 示例：
 
-## Docker 部署
+```env
+TTS_PROVIDER=edge
+EDGE_TTS_VOICE=zh-CN-XiaoxiaoNeural
+EDGE_TTS_RATE=+0%
+EDGE_TTS_VOLUME=+0%
+```
+
+## 主要接口
+
+- `POST /api/stories/scan`：实时识别当前帧
+- `POST /api/stories/scan/stream`：流式讲述当前帧
+- `POST /api/stories/tts`：将讲述文本转为语音
+- `POST /api/stories/scan/save`：保存实时扫描故事记录
+- `POST /api/stories/generate`：根据绘本图片生成故事
+- `POST /api/stories/evaluate`：独立评估故事质量
+
+## 时延与论文实验
+
+### 运行时日志
+
+系统会将关键时延写入 `logs/app.log`：
+
+- `scan.timing`
+- `scan.stream_timing`
+- `tts.timing`
+
+可以直接搜索：
+
+```bash
+grep -E "scan.timing|scan.stream_timing|tts.timing" logs/app.log
+```
+
+PowerShell:
+
+```powershell
+Select-String -Path logs/app.log -Pattern "scan.timing|scan.stream_timing|tts.timing"
+```
+
+### 导出实验表格
+
+新增脚本：
+
+```bash
+python scripts/export_runtime_metrics.py
+```
+
+默认输出到：
+
+```text
+reports/runtime_metrics/runtime_metrics_summary.md
+reports/runtime_metrics/scan_metrics_raw.csv
+reports/runtime_metrics/tts_metrics_raw.csv
+```
+
+这几份文件可以直接作为论文实验表、附录原始数据或答辩材料使用。
+
+## 测试与检查
+
+静态检查：
+
+```bash
+python -m py_compile app/routers/stories.py app/services/*.py
+node --check app/static/camera.js
+```
+
+核心测试：
+
+```bash
+pytest tests/test_story_scan_crop.py tests/test_live_story_tone.py tests/test_eval_service.py tests/test_health.py
+```
+
+## 云端部署
+
+使用 Docker Compose v2：
 
 ```bash
 cp .env.example .env
 docker compose up -d --build
-docker logs -f ai-picturebook-app
+docker compose logs -f app
 ```
 
-更新云端：
+更新部署可参考 [DEPLOY.md](DEPLOY.md)。
 
-```bash
-git pull
-rm -rf uploads/tts/*
-mkdir -p uploads/tts
-docker rm -f ai-picturebook-app 2>/dev/null || true
-docker compose build app
-docker compose up -d app
-```
+## 真实应用参考
 
-更完整的服务器部署说明见 [DEPLOY.md](DEPLOY.md)。
+论文中可用于对比的真实产品方向：
 
----
+- Microsoft Seeing AI：强调摄像头识别、语音反馈、文档/场景阅读
+- Google Lookout：强调模式化识别与辅助阅读
+- Gemini Storybooks：强调个性化故事体验与多模态生成
 
-## 响应模式
-
-快速响应：只调用视觉理解模型，随后用本地规则生成页级短讲述，适合实时翻页。
-
-完整生成：在页面理解后再次调用故事生成模型，文本更丰富，但耗时更高。
-
-核心区别：
-
-```text
-快速响应：VLM 识别 -> 结构化摘要 -> 本地讲述模板
-完整生成：VLM 识别 -> 上下文输入 -> 大模型故事生成
-```
-
----
-
-## 时延统计
-
-扫描接口 `/api/stories/scan` 会返回 `timing` 字段，并写入日志：
-
-```json
-{
-  "response_mode": "fast",
-  "crop_mode": "guide_crop",
-  "analysis_ms": 3200,
-  "story_ms": 0,
-  "quality_ms": 1,
-  "total_ms": 3260
-}
-```
-
-查看日志：
-
-```bash
-grep -E "scan.timing|tts.timing" logs/app.log
-```
-
-PowerShell：
-
-```powershell
-Select-String -Path logs/app.log -Pattern "scan.timing|tts.timing"
-```
-
----
-
-## 主要接口
-
-- `POST /api/stories/scan`：实时识别当前摄像头帧
-- `POST /api/stories/tts`：生成朗读音频
-- `POST /api/stories/generate`：根据绘本图片生成故事
-- `POST /api/stories/generate/submit`：异步生成故事
-- `GET /api/stories/tasks/{task_id}`：查询任务进度
-- `POST /api/stories/evaluate`：故事质量评估
-- `GET /api/books`：绘本列表
-- `POST /api/books/{book_id}/images/upload`：上传绘本图片
-
----
-
-## 项目结构
-
-```text
-app/
-  routers/     API 路由
-  services/    视觉理解、故事生成、实时讲述、TTS、评估
-  static/      前端页面与脚本
-  models/      数据库模型
-  core/        配置、日志、Redis
-
-scripts/       辅助脚本
-uploads/       上传文件与运行时音频
-logs/          应用日志
-```
-
----
-
-## 测试
-
-```bash
-pytest -q
-python -m py_compile app/routers/stories.py app/services/live_story_service.py app/services/tts_service.py
-node --check app/static/camera.js
-```
-
----
-
-## 答辩表述
-
-本课题研究的不是传统的上传图片后生成故事，而是一个面向手机浏览器连续翻页场景的实时绘本视觉理解与低时延智能讲述系统。系统通过摄像头采集、稳定检测、页框裁剪、图文联合理解、上下文记忆、快速讲述生成和语音朗读，构成从动态视觉输入到儿童适龄叙事输出的端云协同闭环。
-
-核心创新点：
-
-- 面向真实移动端共读场景。
-- 稳定触发和重复页抑制降低无效识别。
-- 页框检测与裁剪增强提升输入质量。
-- 页级状态和角色表支持连续讲述。
-- 快速响应与完整生成兼顾延迟和文本质量。
-- 分阶段时延日志便于系统评估。
-
----
-
-## 版本管理
-
-不要提交：
-
-- `.env`
-- `logs/`
-- `uploads/tts/`
-- `models/piper/`
-- 本地数据库和临时报告文件
+本项目与这些真实应用的区别在于：聚焦中文绘本辅助阅读、移动端实时扫描、连续上下文讲述和论文可复现实验。

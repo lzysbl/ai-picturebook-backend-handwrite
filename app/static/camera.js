@@ -3,11 +3,7 @@ window.addEventListener("DOMContentLoaded", async () => {
   document.body.classList.add("camera-page-body");
 
   function syncMobileNavigation() {
-    const isMobile = window.matchMedia?.("(max-width: 900px)")?.matches;
-    const workspaceNav = document.querySelector(".workspace-nav");
-    const returnNav = document.querySelector(".mobile-return-nav");
-    if (workspaceNav) workspaceNav.hidden = Boolean(isMobile);
-    if (returnNav) returnNav.hidden = !isMobile;
+    syncCameraMobileNavigation();
   }
 
   syncMobileNavigation();
@@ -359,6 +355,74 @@ window.addEventListener("DOMContentLoaded", async () => {
     return totalText;
   }
 
+  function applyScanSuccessState(signature, replaceLastPage) {
+    lastScannedSignature = signature;
+    stableFrameCount = 0;
+    lastFrameSignature = signature;
+    updateStateBadges({
+      pageState: replaceLastPage ? "页面状态：当前页已刷新" : "页面状态：当前页识别完成",
+      stabilityText: `稳定帧：0 / ${STABLE_FRAMES_REQUIRED}`,
+      signatureText: "重复检测：已记录当前页",
+    });
+    setStatus(
+      replaceLastPage
+        ? "重新识别完成，当前页讲述已刷新。"
+        : continuousScanEnabled
+          ? "识别完成。翻到下一页后再次点击识别即可连续讲述。"
+          : "识别完成。当前为单页讲述模式。",
+    );
+    showToast(replaceLastPage ? "当前页已重新识别" : "实时识别完成");
+  }
+
+  function parseSseEvents(buffer, onEvent) {
+    return parseCameraSseEvents(buffer, onEvent);
+  }
+
+  async function apiRequestStream(url, formData, onEvent) {
+    await apiRequestCameraStream(url, formData, onEvent);
+  }
+
+  async function scanCurrentFrameStream(formData, signature, replaceLastPage) {
+    let streamedText = "";
+    let finalResult = null;
+    latestStoryText = "";
+    if (storyOutput) storyOutput.textContent = "";
+    if (resultMeta) resultMeta.textContent = "快速讲述生成中...";
+    if (qualityPanel) qualityPanel.classList.add("hidden");
+    setStatus("正在连接大模型，讲述会边生成边显示...");
+
+    await apiRequestStream("/api/stories/scan/stream", formData, (event) => {
+      if (event.type === "meta") {
+        updateContextBadge(event.context || null);
+        updateCropBadge(event.crop_mode || "full_frame");
+        if (event.crop_box) {
+          currentDetectedBox = event.crop_box;
+          setDetectedBox(currentDetectedBox, "流式裁剪区域");
+        }
+        return;
+      }
+      if (event.type === "delta") {
+        streamedText += event.text || "";
+        latestStoryText = streamedText.trim();
+        if (storyOutput) storyOutput.textContent = latestStoryText || "正在生成...";
+        updateMobileResult("快速讲述生成中...", latestStoryText);
+        updateTtsButtonState();
+        return;
+      }
+      if (event.type === "done") {
+        finalResult = event;
+        return;
+      }
+      if (event.type === "error") {
+        throw new Error(event.message || "流式识别失败");
+      }
+    });
+
+    if (!finalResult) throw new Error("流式识别未返回完整结果");
+    renderScanResult({ ...finalResult, story_content: finalResult.story_content || streamedText }, { replaceLastPage });
+    applyScanSuccessState(signature, replaceLastPage);
+  }
+
   function resetLiveStoryBook() {
     if (pageStories.length && !window.confirm("确认清空当前连续故事书吗？")) return;
     pageStories = [];
@@ -429,24 +493,7 @@ window.addEventListener("DOMContentLoaded", async () => {
   }
 
   function buildGuidePageBox() {
-    const videoAspect = (video.videoWidth || 3) / Math.max(1, video.videoHeight || 4);
-    const marginX = 0.03;
-    const marginY = 0.04;
-    let guideWidth = 1 - marginX * 2;
-    let guideHeight = 1 - marginY * 2;
-
-    const aspect = guideWidth / Math.max(0.0001, guideHeight);
-    if (aspect < 0.55) guideWidth = Math.min(0.96, guideHeight * 0.65);
-    if (aspect > 1.15) guideHeight = Math.min(0.96, guideWidth / 1.05);
-    if (videoAspect < 0.7) guideWidth = Math.min(guideWidth, 0.9);
-
-    return {
-      x: (1 - guideWidth) / 2,
-      y: (1 - guideHeight) / 2,
-      width: guideWidth,
-      height: guideHeight,
-      source: "guide",
-    };
+    return buildCameraGuidePageBox(video);
   }
 
   function applyBox(target, labelTarget, box, label, kind) {
@@ -642,7 +689,8 @@ window.addEventListener("DOMContentLoaded", async () => {
         return;
       }
 
-      const maxWidth = 960;
+      const fastMode = (modeSelect?.value || "fast") === "fast";
+      const maxWidth = fastMode ? 640 : 960;
       const scale = Math.min(1, maxWidth / width);
       canvas.width = Math.round(width * scale);
       canvas.height = Math.round(height * scale);
@@ -658,7 +706,7 @@ window.addEventListener("DOMContentLoaded", async () => {
           resolve(blob);
         },
         "image/jpeg",
-        0.78,
+        fastMode ? 0.66 : 0.78,
       );
     });
   }
@@ -772,28 +820,18 @@ window.addEventListener("DOMContentLoaded", async () => {
       formData.append("crop_width", String(currentGuideBox.width));
       formData.append("crop_height", String(currentGuideBox.height));
 
+      if (["fast", "direct"].includes(modeSelect?.value || "fast")) {
+        await scanCurrentFrameStream(formData, signature, replaceLastPage);
+        return;
+      }
+
       const result = await apiRequest("/api/stories/scan", {
         method: "POST",
         body: formData,
       });
 
-      lastScannedSignature = signature;
-      stableFrameCount = 0;
-      lastFrameSignature = signature;
       renderScanResult(result, { replaceLastPage });
-      updateStateBadges({
-        pageState: replaceLastPage ? "页面状态：当前页已刷新" : "页面状态：当前页识别完成",
-        stabilityText: `稳定帧：0 / ${STABLE_FRAMES_REQUIRED}`,
-        signatureText: "重复检测：已记录当前页",
-      });
-      setStatus(
-        replaceLastPage
-          ? "重新识别完成，当前页讲述已刷新。"
-          : continuousScanEnabled
-            ? "识别完成。翻到下一页后再次点击识别即可连续讲述。"
-            : "识别完成。当前为单页讲述模式。",
-      );
-      showToast(replaceLastPage ? "当前页已重新识别" : "实时识别完成");
+      applyScanSuccessState(signature, replaceLastPage);
     } catch (error) {
       showToast(error.message || "识别失败");
       setStatus(`识别失败：${error.message || "未知错误"}`);

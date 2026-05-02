@@ -8,7 +8,7 @@ import json
 import logging
 import re
 from pathlib import Path
-from typing import Any, Awaitable, Callable
+from typing import Any, AsyncIterator, Awaitable, Callable
 
 from openai import AsyncOpenAI
 from PIL import Image, ImageStat
@@ -41,6 +41,7 @@ async def analyze_images(
     image_paths: list[str],
     progress_callback: ProgressCallback | None = None,
     provider_override: str | None = None,
+    compact: bool = False,
 ) -> list[dict[str, Any]]:
     """Analyze uploaded picture-book pages with either mock or Qwen provider."""
 
@@ -48,11 +49,11 @@ async def analyze_images(
         return []
 
     provider = (provider_override or settings.ai_provider or "mock").strip().lower()
-    logger.info("ai.analyze_images provider=%s image_count=%s", provider, len(image_paths))
+    logger.info("ai.analyze_images provider=%s image_count=%s compact=%s", provider, len(image_paths), compact)
     if provider == "qwen":
-        return await _analyze_images_qwen(image_paths, progress_callback=progress_callback)
+        return await _analyze_images_qwen(image_paths, progress_callback=progress_callback, compact=compact)
     if provider == "doubao":
-        return await _analyze_images_doubao(image_paths, progress_callback=progress_callback)
+        return await _analyze_images_doubao(image_paths, progress_callback=progress_callback, compact=compact)
     return _analyze_images_mock(image_paths)
 
 
@@ -104,6 +105,65 @@ async def analyze_image_with_direct_story(
     }
 
 
+async def stream_image_direct_story(
+    image_path: str,
+    *,
+    provider_override: str | None = None,
+    page_no: int = 1,
+    narration_style: str | None = None,
+    audience_age: str | None = None,
+    extra_prompt: str | None = None,
+    recent_pages: list[dict[str, Any]] | None = None,
+) -> AsyncIterator[str]:
+    """Stream a direct narration for one page as plain text chunks."""
+
+    provider = (provider_override or settings.ai_provider or "mock").strip().lower()
+    logger.info("ai.direct_story_stream provider=%s page=%s", provider, page_no)
+    if provider == "doubao":
+        if not settings.doubao_api_key:
+            raise RuntimeError("DOUBAO_API_KEY is required when LIVE_AI_PROVIDER or AI_PROVIDER is doubao")
+        async for delta in _stream_direct_story_for_one_image(
+            client=_get_doubao_client(),
+            model=settings.doubao_model,
+            image_path=image_path,
+            page_no=page_no,
+            narration_style=narration_style,
+            audience_age=audience_age,
+            extra_prompt=extra_prompt,
+            recent_pages=recent_pages,
+        ):
+            yield delta
+        return
+    if provider == "qwen":
+        if not settings.qwen_api_key:
+            raise RuntimeError("QWEN_API_KEY is required when AI_PROVIDER is qwen")
+        async for delta in _stream_direct_story_for_one_image(
+            client=_get_qwen_client(),
+            model=settings.qwen_model,
+            image_path=image_path,
+            page_no=page_no,
+            narration_style=narration_style,
+            audience_age=audience_age,
+            extra_prompt=extra_prompt,
+            recent_pages=recent_pages,
+        ):
+            yield delta
+        return
+
+    result = await analyze_image_with_direct_story(
+        image_path,
+        provider_override=provider,
+        page_no=page_no,
+        narration_style=narration_style,
+        audience_age=audience_age,
+        extra_prompt=extra_prompt,
+        recent_pages=recent_pages,
+    )
+    story = str(result.get("story") or "")
+    if story:
+        yield story
+
+
 def _analyze_images_mock(image_paths: list[str]) -> list[dict[str, Any]]:
     result: list[dict[str, Any]] = []
     for idx, image_path in enumerate(image_paths, start=1):
@@ -134,6 +194,7 @@ def _analyze_images_mock(image_paths: list[str]) -> list[dict[str, Any]]:
 async def _analyze_images_qwen(
     image_paths: list[str],
     progress_callback: ProgressCallback | None = None,
+    compact: bool = False,
 ) -> list[dict[str, Any]]:
     if not settings.qwen_api_key:
         logger.warning("ai.analyze_images qwen_api_key_missing fallback=mock")
@@ -156,7 +217,11 @@ async def _analyze_images_qwen(
     async def worker(page_no: int, image_path: str) -> None:
         async with semaphore:
             try:
-                parsed = await _call_qwen_vl_for_one_image(image_path=image_path, page_no=page_no)
+                parsed = await _call_qwen_vl_for_one_image(
+                    image_path=image_path,
+                    page_no=page_no,
+                    compact=compact,
+                )
                 item = _normalize_vision_json(parsed)
                 item.update({"page": page_no, "image_path": image_path})
                 results[page_no] = item
@@ -190,6 +255,7 @@ async def _analyze_images_qwen(
 async def _analyze_images_doubao(
     image_paths: list[str],
     progress_callback: ProgressCallback | None = None,
+    compact: bool = False,
 ) -> list[dict[str, Any]]:
     if not settings.doubao_api_key:
         raise RuntimeError("DOUBAO_API_KEY is required when LIVE_AI_PROVIDER or AI_PROVIDER is doubao")
@@ -211,7 +277,11 @@ async def _analyze_images_doubao(
     async def worker(page_no: int, image_path: str) -> None:
         async with semaphore:
             try:
-                parsed = await _call_doubao_vl_for_one_image(image_path=image_path, page_no=page_no)
+                parsed = await _call_doubao_vl_for_one_image(
+                    image_path=image_path,
+                    page_no=page_no,
+                    compact=compact,
+                )
                 item = _normalize_vision_json(parsed)
                 item.update({"page": page_no, "image_path": image_path})
                 results[page_no] = item
@@ -238,7 +308,7 @@ async def _analyze_images_doubao(
     return ordered
 
 
-async def _call_qwen_vl_for_one_image(image_path: str, page_no: int) -> dict[str, Any]:
+async def _call_qwen_vl_for_one_image(image_path: str, page_no: int, compact: bool = False) -> dict[str, Any]:
     client = _get_qwen_client()
     json_schema = (
         '{"page":1,"角色":[],"场景":"","动作":[],"情绪":"","关键物体":[],"画面文字":[],'
@@ -263,6 +333,13 @@ async def _call_qwen_vl_for_one_image(image_path: str, page_no: int) -> dict[str
             "并判断该页是否是标题页/扉页（如仅有书名、作者、出版信息）。"
         )
 
+    if compact:
+        user_prompt = _build_fast_vision_prompt(page_no)
+
+    request_options: dict[str, Any] = {}
+    if compact:
+        request_options["max_tokens"] = 220
+
     completion = await client.chat.completions.create(
         model=settings.qwen_model,
         temperature=0.2,
@@ -277,6 +354,7 @@ async def _call_qwen_vl_for_one_image(image_path: str, page_no: int) -> dict[str
                 ],
             },
         ],
+        **request_options,
     )
     parsed = _extract_json(completion.choices[0].message.content or "")
     if not isinstance(parsed, dict):
@@ -284,8 +362,11 @@ async def _call_qwen_vl_for_one_image(image_path: str, page_no: int) -> dict[str
     return parsed
 
 
-async def _call_doubao_vl_for_one_image(image_path: str, page_no: int) -> dict[str, Any]:
+async def _call_doubao_vl_for_one_image(image_path: str, page_no: int, compact: bool = False) -> dict[str, Any]:
     client = _get_doubao_client()
+    request_options: dict[str, Any] = {}
+    if compact:
+        request_options["max_tokens"] = 220
     completion = await client.chat.completions.create(
         model=settings.doubao_model,
         temperature=0.2,
@@ -302,10 +383,14 @@ async def _call_doubao_vl_for_one_image(image_path: str, page_no: int) -> dict[s
                 "role": "user",
                 "content": [
                     {"type": "image_url", "image_url": {"url": _image_path_to_data_url(image_path)}},
-                    {"type": "text", "text": _build_vision_prompt(page_no)},
+                    {
+                        "type": "text",
+                        "text": _build_fast_vision_prompt(page_no) if compact else _build_vision_prompt(page_no),
+                    },
                 ],
             },
         ],
+        **request_options,
     )
     parsed = _extract_json(completion.choices[0].message.content or "")
     if not isinstance(parsed, dict):
@@ -382,6 +467,98 @@ async def _call_direct_story_for_one_image(
         "analysis": normalized_analysis,
         "story": cleaned_story,
     }
+
+
+async def _stream_direct_story_for_one_image(
+    *,
+    client: AsyncOpenAI,
+    model: str,
+    image_path: str,
+    page_no: int,
+    narration_style: str | None,
+    audience_age: str | None,
+    extra_prompt: str | None,
+    recent_pages: list[dict[str, Any]] | None,
+) -> AsyncIterator[str]:
+    stream = await client.chat.completions.create(
+        model=model,
+        temperature=0.35,
+        timeout=120,
+        stream=True,
+        messages=[
+            {
+                "role": "system",
+                "content": (
+                    "You are a real-time picture-book narrator for children. "
+                    "Stream only the final narration text in Simplified Chinese."
+                ),
+            },
+            {
+                "role": "user",
+                "content": [
+                    {"type": "image_url", "image_url": {"url": _image_path_to_data_url(image_path)}},
+                    {
+                        "type": "text",
+                        "text": _build_stream_direct_story_prompt(
+                            page_no=page_no,
+                            narration_style=narration_style,
+                            audience_age=audience_age,
+                            extra_prompt=extra_prompt,
+                            recent_pages=recent_pages,
+                        ),
+                    },
+                ],
+            },
+        ],
+    )
+
+    async for chunk in stream:
+        if not chunk.choices:
+            continue
+        delta = chunk.choices[0].delta.content or ""
+        if delta:
+            yield delta
+
+
+def _build_stream_direct_story_prompt(
+    *,
+    page_no: int,
+    narration_style: str | None,
+    audience_age: str | None,
+    extra_prompt: str | None,
+    recent_pages: list[dict[str, Any]] | None,
+) -> str:
+    fallback = "\u8bf7\u5c06\u7ed8\u672c\u9875\u653e\u5165\u5f15\u5bfc\u6846\u5185"
+    context = ""
+    if recent_pages:
+        snippets: list[str] = []
+        for page in recent_pages[-2:]:
+            roles = ", ".join(str(x) for x in page.get("roles", [])[:3])
+            scene = str(page.get("scene") or "")
+            previous_story = str(page.get("story") or "")[:80]
+            snippets.append(
+                f"previous page: roles={roles or 'none'}, scene={scene or 'unknown'}, story={previous_story}"
+            )
+        context = "\n".join(snippets)
+
+    return (
+        "Look at the image and stream a short narration for the current picture-book page.\n"
+        f"Current page number: {page_no}\n"
+        f"Audience age: {audience_age or '3-6'}\n"
+        f"Narration style: {narration_style or 'gentle'}\n"
+        f"Previous context:\n{context or 'none'}\n"
+        f"Extra requirement: {extra_prompt or 'none'}\n"
+        "Rules:\n"
+        "1. Output only Simplified Chinese narration text. No JSON, no markdown, no title.\n"
+        "2. Keep it like a picture-book story, not an image-recognition report.\n"
+        "3. Do not say phrases like image shows, I can see, recognition result, according to the image.\n"
+        "4. Do not invent invisible characters, objects, words, or actions.\n"
+        "5. If the main subject is a real person, camera user, room, desk, keyboard, computer, or background "
+        f"instead of a picture-book/book page, output exactly: {fallback}\n"
+        "6. Never call a real person uncle, aunt, brother, sister, man, woman, boy, or girl.\n"
+        "7. Keep the narration within 80 to 160 Chinese characters.\n"
+        "8. If the page is unclear, be conservative and ask the user to place the book page inside the guide box.\n"
+    )
 
 
 def _build_direct_story_prompt(
@@ -507,6 +684,18 @@ def _build_vision_prompt(page_no: int) -> str:
     )
 
 
+def _build_fast_vision_prompt(page_no: int) -> str:
+    schema = (
+        '{"page":1,"角色":[],"场景":"","动作":[],"情绪":"","关键物体":[],"画面文字":[],'
+        '"is_picturebook_page":true,"page_confidence":0.0}'
+    )
+    return (
+        f"快速识别第 {page_no} 页，只返回一行 JSON：{schema}\n"
+        "要求：不要解释，不要 markdown；数组最多 3 项；场景和情绪用短词；"
+        "只写确定可见的信息；如果主体不是绘本/书页，is_picturebook_page=false。"
+    )
+
+
 def _extract_json(text: str) -> dict[str, Any] | list[Any]:
     stripped = text.strip()
     stripped = re.sub(r"^```(?:json)?\s*", "", stripped, flags=re.IGNORECASE)
@@ -590,4 +779,4 @@ def _image_path_to_data_url(image_path: str) -> str:
     return f"data:{mime};base64,{b64}"
 
 
-__all__ = ["ProgressCallback", "analyze_images"]
+__all__ = ["ProgressCallback", "analyze_image_with_direct_story", "analyze_images", "stream_image_direct_story"]
