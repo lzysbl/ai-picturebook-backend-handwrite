@@ -20,6 +20,8 @@ $items = @(
     "DEPLOY.md",
     "Dockerfile",
     "docker-compose.yml",
+    "deploy.sh",
+    "pytest.ini",
     "requirements.txt",
     ".dockerignore",
     ".gitignore",

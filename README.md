@@ -166,6 +166,37 @@ reports/runtime_metrics/tts_metrics_raw.csv
 
 这几份文件可以直接作为论文实验表、附录原始数据或答辩材料使用。
 
+### 手机拍照批量测试
+
+将手机拍摄的绘本页图片放入一个目录，例如 `demo_book/phone_pages/`，启动后端后运行：
+
+```powershell
+python scripts/benchmark_scan_images.py --image-dir demo_book/phone_pages --username 你的账号 --password 你的密码 --mode direct --stream --tts
+```
+
+脚本会逐张调用实时识别接口，并可选调用 TTS 接口，默认输出：
+
+```text
+reports/image_scan_benchmark/image_scan_benchmark_summary.md
+reports/image_scan_benchmark/image_scan_benchmark.csv
+```
+
+如果本地做多轮实验，建议临时关闭接口限流，或设置 `--sleep` 增加请求间隔，避免批量请求触发速率限制。
+
+### 一键系统测试
+
+Windows/PowerShell 环境可以直接运行：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/run_system_tests.ps1
+```
+
+脚本会依次执行 `pytest`、Python 语法检查、前端脚本语法检查，并重新导出运行时指标。测试日志输出到：
+
+```text
+reports/system_tests/system_test_latest.log
+```
+
 ## 测试与检查
 
 静态检查：

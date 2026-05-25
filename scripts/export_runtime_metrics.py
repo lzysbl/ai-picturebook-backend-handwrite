@@ -11,7 +11,7 @@ from pathlib import Path
 
 
 SCAN_PATTERN = re.compile(
-    r"scan(?:\.stream)?_?timing mode=(?P<mode>\S+).*?total_ms=(?P<total>\d+)"
+    r"scan(?:\.stream)?[._]timing mode=(?P<mode>\S+).*?total_ms=(?P<total>\d+)"
     r"(?:.*?first_delta_ms=(?P<first_delta>\d+|None))?"
     r".*?analysis_ms=(?P<analysis>\d+)"
     r".*?quality_ms=(?P<quality>\d+)"
@@ -56,11 +56,13 @@ def parse_log(log_path: Path) -> tuple[list[dict[str, object]], list[dict[str, o
         scan_match = SCAN_PATTERN.search(line)
         if scan_match:
             first_delta_raw = scan_match.group("first_delta")
+            story_match = re.search(r"\bstory_ms=(\d+)", line)
             scan_rows.append(
                 {
                     "mode": scan_match.group("mode"),
                     "total_ms": int(scan_match.group("total")),
                     "analysis_ms": int(scan_match.group("analysis")),
+                    "story_ms": int(story_match.group(1)) if story_match else None,
                     "quality_ms": int(scan_match.group("quality")),
                     "first_delta_ms": None if first_delta_raw in (None, "None") else int(first_delta_raw),
                 }
@@ -88,6 +90,9 @@ def build_markdown(scan_rows: list[dict[str, object]], tts_rows: list[dict[str, 
         mode = str(row["mode"])
         scan_groups[mode]["total_ms"].append(int(row["total_ms"]))
         scan_groups[mode]["analysis_ms"].append(int(row["analysis_ms"]))
+        story_ms = row.get("story_ms")
+        if isinstance(story_ms, int):
+            scan_groups[mode]["story_ms"].append(story_ms)
         scan_groups[mode]["quality_ms"].append(int(row["quality_ms"]))
         first_delta = row["first_delta_ms"]
         if isinstance(first_delta, int):
@@ -102,7 +107,7 @@ def build_markdown(scan_rows: list[dict[str, object]], tts_rows: list[dict[str, 
         ]
     )
     for mode in sorted(scan_groups):
-        for metric in ("total_ms", "analysis_ms", "first_delta_ms", "quality_ms"):
+        for metric in ("total_ms", "analysis_ms", "story_ms", "first_delta_ms", "quality_ms"):
             summary = summarize(scan_groups[mode].get(metric, []))
             lines.append(
                 f"| {mode} | {metric} | {summary['count']} | {summary['avg']} | "
@@ -156,7 +161,7 @@ def main() -> None:
     write_csv(
         out_dir / "scan_metrics_raw.csv",
         scan_rows,
-        ["mode", "total_ms", "analysis_ms", "quality_ms", "first_delta_ms"],
+        ["mode", "total_ms", "analysis_ms", "story_ms", "quality_ms", "first_delta_ms"],
     )
     write_csv(
         out_dir / "tts_metrics_raw.csv",

@@ -48,5 +48,10 @@ def test_export_runtime_metrics_writes_markdown_and_csv(tmp_path: Path) -> None:
 
     summary_text = summary_md.read_text(encoding="utf-8")
     assert "Scan Metrics" in summary_text
+    assert "| fast | total_ms | 1 | 1200 | 1200 | 1200 | 1200 |" in summary_text
+    assert "| fast | story_ms | 1 | 20 | 20 | 20 | 20 |" in summary_text
     assert "fast_stream" in summary_text
     assert "edge" in summary_text
+
+    scan_text = scan_csv.read_text(encoding="utf-8-sig")
+    assert "fast,1200,1100,20,5," in scan_text

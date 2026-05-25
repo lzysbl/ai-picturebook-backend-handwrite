@@ -3,17 +3,25 @@ __pycache__/
 *.py[cod]
 *.pyo
 *.pyd
+.pytest_cache/
 
 # Virtual environments
 .venv/
 venv/
 env/
+
 # Env files
 .env
+
+# Local databases
+*.db
+*.sqlite
+*.sqlite3
 
 # IDE
 .vscode/
 books/
+
 # OS
 .DS_Store
 Thumbs.db
@@ -27,11 +35,14 @@ learning/
 demo_book/
 
 报告/*
-
+reports/*
 scripts/build_midterm_report.py
 logs/
+tmp/
 models/piper/
 uploads/tts/
 uploads/
 reports/runtime_metrics/
+reports/system_tests/
+reports/image_scan_benchmark/
 release/
