@@ -204,7 +204,12 @@ def plot_figure_6_2() -> None:
             if value > 0:
                 center_text(draw, (x1 + bar_w // 2, y1 - 16), f"{value:.1f}", FONT_SMALL, fill=TEXT)
         mode_lines = mode.split("\n")
-        multiline_center(draw, int(group_center), bottom + 30, mode_lines, FONT_SMALL, fill=TEXT, line_gap=4)
+        label_top = bottom + 34
+        for line_index, line in enumerate(mode_lines):
+            line_w, line_h = text_size(draw, line, FONT_SMALL)
+            line_x = int(group_center - line_w / 2)
+            line_y = label_top + line_index * (line_h + 6)
+            draw.text((line_x, line_y), line, font=FONT_SMALL, fill=TEXT)
 
     legend_x, legend_y = 520, 120
     for idx, (name, _, color) in enumerate(series):
