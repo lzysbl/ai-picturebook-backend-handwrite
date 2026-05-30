@@ -1,4 +1,15 @@
-"""Tests for book-service helpers."""
+"""绘本服务测试。
+
+覆盖范围：
+- 验证删除绘本时，本地上传目录会被清理。
+
+关联模块：
+- `app/services/book_service.py`
+- `/ui/books` 删除绘本功能间接依赖该逻辑。
+
+运行方式：
+- `pytest tests/test_book_service.py`
+"""
 
 from __future__ import annotations
 

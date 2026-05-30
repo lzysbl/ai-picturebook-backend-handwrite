@@ -1,3 +1,18 @@
+"""论文软件工程内容增强脚本。
+
+用途：
+- 向论文 DOCX 中补充或调整用例图、ER 图、流程图、表格等软件工程材料。
+- 适合在论文已有主体内容后，用脚本批量插入标准化图表。
+
+关联文件：
+- 读取报告目录中的论文 DOCX。
+- 读取 `reports/software_engineering_figures` 下的工程图。
+- 输出增强后的论文文档和备份。
+
+运行方式：
+- `python scripts/enhance_thesis_software_engineering.py`
+"""
+
 from __future__ import annotations
 
 from datetime import datetime

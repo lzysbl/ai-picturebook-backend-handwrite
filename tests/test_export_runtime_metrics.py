@@ -1,4 +1,16 @@
-"""Tests for runtime metric export script."""
+"""运行指标导出脚本测试。
+
+覆盖范围：
+- 用临时日志文件验证 scan、stream、tts timing 能被正确解析。
+- 验证 Markdown 汇总和 CSV 原始数据文件会正常生成。
+
+关联脚本：
+- `scripts/export_runtime_metrics.py`
+- 论文第 6 章性能统计。
+
+运行方式：
+- `pytest tests/test_export_runtime_metrics.py`
+"""
 
 from __future__ import annotations
 

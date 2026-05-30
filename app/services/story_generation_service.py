@@ -1,9 +1,24 @@
-"""故事生成服务：负责把页面分析结果组装成最终故事文本。
+"""完整故事生成服务。
 
-输出规则（强制）：
-1. 第一行：`《标题》`
-2. 第二行：`文／作者`
-3. 后续每页单独一段：`第X页：...`
+职责：
+- 把图片识别结果、OCR 文本、角色、场景和用户提示词组装成故事生成输入。
+- 调用大模型生成完整绘本故事，并对输出做清洗、去重、标题和作者补全。
+- 支持从已有识别结果生成故事，也支持直接从图片路径识别并生成整本故事。
+
+前端关联：
+- `/ui/generate`：选择绘本后生成完整故事。
+- `/ui/dashboard`：旧版首页/仪表盘里的快速生成入口。
+- `/ui/camera`：实时识别保存或整理为完整故事时可复用生成逻辑。
+
+主要路由：
+- `app/routers/stories.py`：`/api/stories/generate`
+- `app/routers/stories.py`：`/api/stories/generate/submit`
+- `app/routers/stories.py`：`/api/stories/scan` 的 full 模式。
+
+输出规则：
+- 第一行：`《标题》`
+- 第二行：`文／作者`
+- 后续每页单独一段：`第X页：...`
 """
 
 from __future__ import annotations

@@ -1,3 +1,17 @@
+"""论文定向格式修复脚本。
+
+用途：
+- 对论文 DOCX 进行定向格式修复和图表补齐。
+- 适合在论文后期针对导师反馈或学校格式要求做批量修正。
+
+主要处理：
+- 正文字体、行距、引用上标、三线表、图表位置。
+- 插入或校正论文中的系统架构图、实时识别图、TTS 流程图和第 6 章实验图。
+
+运行方式：
+- `python scripts/targeted_thesis_format_fix.py`
+"""
+
 from __future__ import annotations
 
 import re

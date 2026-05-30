@@ -1,4 +1,17 @@
-"""Tests for user auth schema and password reset flow."""
+"""用户认证与密码重置测试。
+
+覆盖范围：
+- 验证注册表单密码一致性和邮箱格式校验。
+- 验证密码重置 token 生成、重置和邮箱登录流程。
+
+关联模块：
+- `app/schemas/user.py`
+- `app/services/user_service.py`
+- `/ui/login`、`/ui/register`、`/ui/forgot-password`、`/ui/reset-password`
+
+运行方式：
+- `pytest tests/test_user_auth.py`
+"""
 
 from __future__ import annotations
 

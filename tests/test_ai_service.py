@@ -1,4 +1,17 @@
-"""Tests for the public AI service API used by the app."""
+"""AI 服务兼容入口测试。
+
+覆盖范围：
+- 验证 `ai_service.py` 暴露的图像分析入口能返回页面结构信息。
+- 验证规则型故事质量评价能计算页面覆盖和可读性指标。
+
+关联模块：
+- `app/services/ai_service.py`
+- `app/services/vision_analysis_service.py`
+- `app/services/story_quality_service.py`
+
+运行方式：
+- `pytest tests/test_ai_service.py`
+"""
 
 from __future__ import annotations
 

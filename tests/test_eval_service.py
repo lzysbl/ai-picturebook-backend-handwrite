@@ -1,4 +1,17 @@
-"""Tests for full story quality evaluation and thesis-facing metrics."""
+"""故事质量评价服务测试。
+
+覆盖范围：
+- 验证完整质量评价结果包含论文实验可用的指标字段。
+- 覆盖规则指标和可选评审输出的组装逻辑。
+
+关联模块：
+- `app/services/eval_service.py`
+- `app/services/story_quality_service.py`
+- `/ui/history` 故事质量评价面板。
+
+运行方式：
+- `pytest tests/test_eval_service.py`
+"""
 
 from __future__ import annotations
 

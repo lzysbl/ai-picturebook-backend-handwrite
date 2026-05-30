@@ -1,4 +1,17 @@
-"""Export story quality results for thesis tables."""
+"""故事质量评价报告导出脚本。
+
+用途：
+- 根据故事记录或本地分析文件，生成论文可用的质量评价 JSON/CSV。
+- 用于整理图文贴合度、故事完整性、可读性等评价结果。
+
+关联页面/模块：
+- `/ui/history`：故事质量评价面板。
+- `app/services/eval_service.py`：完整质量评价。
+- `app/services/story_quality_service.py`：规则型质量指标。
+
+运行方式：
+- `python scripts/export_story_quality_report.py --help`
+"""
 
 from __future__ import annotations
 

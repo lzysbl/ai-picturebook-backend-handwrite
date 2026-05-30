@@ -1,7 +1,16 @@
-"""Benchmark realtime scan APIs with a directory of local images.
+"""图像识别与故事生成 benchmark 脚本。
 
-Usage example:
-    python scripts/benchmark_scan_images.py --image-dir demo_book --username yjl --password xxx --mode direct --stream --tts
+用途：
+- 批量读取本地绘本图片，调用后端识别、流式识别、完整生成和 TTS 接口。
+- 输出 CSV 明细和 Markdown 汇总，用于论文第 6 章实验数据和验收性能说明。
+
+关联页面/模块：
+- `/ui/camera`：实时识别、流式讲述、TTS 朗读。
+- `/ui/generate`：完整故事生成。
+- `app/routers/stories.py`：`/api/stories/scan`、`/scan/stream`、`/tts`。
+
+运行示例：
+- `python scripts/benchmark_scan_images.py --image-dir demo_book/phone_pages --recursive --mode direct --stream`
 """
 
 from __future__ import annotations

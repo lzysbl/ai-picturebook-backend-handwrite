@@ -1,12 +1,17 @@
-"""Generate thesis figures 6.1, 6.2 and 6.3 with pure Pillow.
+"""论文第 6 章实验图生成脚本。
 
-This script intentionally avoids matplotlib/numpy so it can run in environments
-where matplotlib binary wheels are incompatible with the installed NumPy.
+用途：
+- 使用 Pillow 绘制延迟对比、运行指标和测试数据组成等论文实验图。
+- 避免依赖 matplotlib/numpy，减少本机科学计算库版本冲突。
 
-Outputs:
-  reports/thesis_figures_python/figure_6_1_latency_comparison.png
-  reports/thesis_figures_python/figure_6_2_runtime_metrics.png
-  reports/thesis_figures_python/figure_6_3_dataset_composition.png
+关联数据：
+- `reports/image_scan_benchmark`：benchmark 结果。
+- `reports/runtime_metrics`：运行日志指标。
+
+输出：
+- `reports/thesis_figures_python/figure_6_1_latency_comparison.png`
+- `reports/thesis_figures_python/figure_6_2_runtime_metrics.png`
+- `reports/thesis_figures_python/figure_6_3_dataset_composition.png`
 """
 
 from __future__ import annotations

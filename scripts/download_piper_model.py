@@ -1,8 +1,16 @@
-"""Download the default Piper Chinese voice model.
+"""Piper 中文语音模型下载脚本。
 
-The app expects the model files under models/piper/ by default:
-    models/piper/zh_CN-huayan-x_low.onnx
-    models/piper/zh_CN-huayan-x_low.onnx.json
+用途：
+- 下载本地 Piper TTS 所需的中文语音模型和配置文件。
+- 当 `.env` 中 `TTS_PROVIDER=piper` 时，后端 `tts_service.py` 会使用这些模型。
+
+关联页面/模块：
+- `/ui/camera`：实时识别后的朗读功能。
+- `app/services/tts_service.py`：Piper 语音合成后端。
+
+默认输出：
+- `models/piper/zh_CN-huayan-x_low.onnx`
+- `models/piper/zh_CN-huayan-x_low.onnx.json`
 """
 
 from __future__ import annotations

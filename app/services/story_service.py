@@ -1,4 +1,21 @@
-"""故事记录业务服务层。"""
+"""故事记录服务。
+
+职责：
+- 管理已经生成或保存的故事记录。
+- 创建故事历史，保存用户提示词、图片分析结果和最终故事文本。
+- 查询用户历史故事、查看故事详情、删除故事记录。
+
+前端关联：
+- `/ui/history`：故事历史列表、故事详情、删除历史记录。
+- `/ui/generate`：完整故事生成成功后写入故事记录。
+- `/ui/camera`：实时识别保存为故事时写入故事记录。
+- `/ui/dashboard`：旧版仪表盘的最近故事展示。
+
+主要路由：
+- `app/routers/stories.py`：`/api/stories`
+- `app/routers/stories.py`：`/api/stories/{story_id}`
+- `app/routers/stories.py`：生成、保存故事时内部调用。
+"""
 
 from __future__ import annotations
 

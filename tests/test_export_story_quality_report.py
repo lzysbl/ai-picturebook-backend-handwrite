@@ -1,4 +1,15 @@
-"""Tests for the thesis report export script."""
+"""故事质量报告导出脚本测试。
+
+覆盖范围：
+- 使用本地临时分析文件和故事文本，验证质量报告 JSON 能正常导出。
+
+关联脚本：
+- `scripts/export_story_quality_report.py`
+- 论文第 6 章质量评价表格。
+
+运行方式：
+- `pytest tests/test_export_story_quality_report.py`
+"""
 
 from __future__ import annotations
 

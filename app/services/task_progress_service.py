@@ -1,4 +1,17 @@
-"""故事生成任务状态服务：优先 Redis，失败时降级为内存。"""
+"""故事生成任务进度服务。
+
+职责：
+- 管理异步故事生成任务的状态，例如 pending、running、completed、failed。
+- 保存任务进度、错误信息和最终故事 ID，供前端轮询展示。
+- 优先使用 Redis 保存任务状态，Redis 不可用时降级为本地内存。
+
+前端关联：
+- `/ui/generate`：提交异步生成任务后轮询进度。
+
+主要路由：
+- `app/routers/stories.py`：`/api/stories/generate/submit`
+- `app/routers/stories.py`：`/api/stories/tasks/{task_id}`
+"""
 
 from __future__ import annotations
 

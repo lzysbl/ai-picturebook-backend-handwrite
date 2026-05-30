@@ -1,7 +1,15 @@
-"""Story quality cache service.
+"""故事质量评价缓存服务。
 
-This service stores quality results by story + mode, so UI mode switch does not
-trigger recomputation. Re-evaluation should only happen when refresh=true.
+职责：
+- 按故事 ID 和评价模式缓存质量评价结果，避免重复调用规则评价或大模型评审。
+- 支持读取、写入和清除缓存；Redis 不可用时降级为本地内存缓存。
+- 刷新评价时才重新计算，普通页面切换优先复用缓存。
+
+前端关联：
+- `/ui/history`：故事详情页打开质量评价、切换评价模式、刷新评价。
+
+主要路由：
+- `app/routers/stories.py`：`/api/stories/{story_id}/quality`
 """
 
 from __future__ import annotations

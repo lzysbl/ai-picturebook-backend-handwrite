@@ -1,4 +1,16 @@
-"""Optional text-to-speech service with Edge TTS and Piper providers."""
+"""文字转语音服务。
+
+职责：
+- 把生成好的故事文本转换为可播放音频。
+- 支持 Edge TTS 和 Piper 两种语音后端。
+- 对长文本进行清洗、分段、合成和音频合并，并把生成文件保存到上传目录。
+
+前端关联：
+- `/ui/camera`：实时识别后朗读当前页讲述或总故事。
+
+主要路由：
+- `app/routers/stories.py`：`/api/stories/tts`
+"""
 
 from __future__ import annotations
 

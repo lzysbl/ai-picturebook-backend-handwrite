@@ -1,3 +1,18 @@
+"""中期报告模板填充脚本。
+
+用途：
+- 打开学校中期报告模板，将阶段总结、后续计划、问题和教师意见等内容写入表格。
+- 主要用于中期检查材料快速成稿。
+
+关联文件：
+- 读取报告目录中的中期报告模板。
+- 输出 `报告/midterm_report_full.docx`。
+- 不直接关联前端页面或后端接口。
+
+运行方式：
+- `python scripts/fill_midterm_full.py`
+"""
+
 from pathlib import Path
 
 from docx import Document

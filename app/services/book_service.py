@@ -1,4 +1,21 @@
-"""Book service layer."""
+"""绘本信息服务。
+
+职责：
+- 管理绘本主体数据，包括创建、查询、按标题复用、删除和封面更新。
+- 删除绘本时同步清理本地上传目录，避免数据库记录和文件残留不一致。
+- 查询绘本时自动用第一页图片补齐缺失封面。
+
+前端关联：
+- `/ui/books`：绘本列表、新建绘本、删除绘本。
+- `/ui/upload`：上传图片前选择或创建绘本。
+- `/ui/generate`：生成故事前选择绘本。
+- `/ui/history`：按绘本查看历史故事和图片。
+
+主要路由：
+- `app/routers/books.py`：`/api/books`
+- `app/routers/images.py`：上传图片后更新封面。
+- `app/routers/stories.py`：生成故事或保存实时识别结果时关联绘本。
+"""
 
 from __future__ import annotations
 

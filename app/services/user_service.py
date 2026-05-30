@@ -1,4 +1,24 @@
-"""User service layer."""
+"""用户账号服务。
+
+职责：
+- 管理用户注册、登录认证、用户查询和密码修改。
+- 生成密码重置 token，并根据 token 完成密码重置。
+- 为需要登录的业务接口提供用户身份基础数据。
+
+前端关联：
+- `/ui/login`：用户登录。
+- `/ui/register`：用户注册。
+- `/ui/forgot-password`：申请密码重置。
+- `/ui/reset-password`：设置新密码。
+- 其他业务页面会通过 `/api/users/me` 校验登录状态。
+
+主要路由：
+- `app/routers/users.py`：`/api/users/register`
+- `app/routers/users.py`：`/api/users/login`
+- `app/routers/users.py`：`/api/users/forgot-password`
+- `app/routers/users.py`：`/api/users/reset-password`
+- `app/routers/users.py`：`/api/users/me`
+"""
 
 from __future__ import annotations
 

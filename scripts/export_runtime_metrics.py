@@ -1,4 +1,17 @@
-"""Export runtime metrics from app logs for thesis/report use."""
+"""运行日志指标导出脚本。
+
+用途：
+- 从 `logs/app.log` 解析识别、流式识别、完整生成和 TTS 的耗时日志。
+- 导出 Markdown 汇总和 CSV 原始数据，用于论文第 6 章性能分析。
+
+关联页面/模块：
+- `/ui/camera`：实时识别、流式识别、TTS。
+- `/ui/generate`：完整故事生成。
+- `app/routers/stories.py`：记录 scan、stream、tts timing 日志。
+
+运行方式：
+- `python scripts/export_runtime_metrics.py`
+"""
 
 from __future__ import annotations
 

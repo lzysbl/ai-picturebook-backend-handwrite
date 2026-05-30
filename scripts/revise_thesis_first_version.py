@@ -1,9 +1,15 @@
-"""Revise the first thesis version for content/format feedback.
+"""论文第一版修订脚本。
 
-The script edits the existing DOCX in place after making a timestamped backup.
-It focuses on content boundaries (theory/design/implementation/testing),
-chapter titles, abstract metrics, Chinese parentheses, and repeated table
-headers for cross-page tables.
+用途：
+- 根据反馈批量修订论文 DOCX 内容和格式。
+- 执行前会生成带时间戳的备份，降低误操作风险。
+
+重点处理：
+- 理论、设计、实现、测试章节边界。
+- 标题、摘要指标、中文括号、跨页表头等格式问题。
+
+运行方式：
+- `python scripts/revise_thesis_first_version.py`
 """
 
 from __future__ import annotations

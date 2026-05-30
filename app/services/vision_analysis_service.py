@@ -1,4 +1,20 @@
-"""Image analysis service for mock and Qwen-backed picture understanding."""
+"""图片理解与实时讲述 AI 服务。
+
+职责：
+- 调用视觉大模型识别绘本图片，提取角色、场景、动作、情绪、文字等结构化信息。
+- 支持普通图片分析、单页直接讲述、实时流式讲述三类能力。
+- 根据配置选择 mock、Qwen 或 Doubao 等模型后端。
+
+前端关联：
+- `/ui/generate`：完整故事生成前先分析绘本图片。
+- `/ui/camera`：实时识别、流式讲述、拍照识别。
+- `/ui/history`：历史故事中的图片分析结果来自本服务。
+
+主要路由：
+- `app/routers/stories.py`：`/api/stories/generate`
+- `app/routers/stories.py`：`/api/stories/scan`
+- `app/routers/stories.py`：`/api/stories/scan/stream`
+"""
 
 from __future__ import annotations
 

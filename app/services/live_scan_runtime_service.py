@@ -1,8 +1,18 @@
-"""Runtime helpers for realtime picture-book scanning.
+"""实时识别运行时服务。
 
-The story router keeps the HTTP/API orchestration, while this module owns
-camera-frame preparation, scan session storage, SSE formatting, and saved
-live-scan image path validation.
+职责：
+- 支撑摄像头实时识别流程中的运行时能力，而不是直接生成故事。
+- 处理实拍图片路径校验、扫描缓存 key、连续识别 session、SSE 事件格式。
+- 对图片做页面区域检测、裁剪和增强，提升实时识别稳定性。
+- 在 Redis 不可用时使用本地内存缓存降级。
+
+前端关联：
+- `/ui/camera`：实时识别主页面。
+- 前端 `camera.js` 通过 `/api/stories/scan`、`/api/stories/scan/stream`、
+  `/api/stories/scan/save` 间接使用本服务。
+
+主要路由：
+- `app/routers/stories.py`：实时识别、流式识别、保存实时识别结果。
 """
 
 from __future__ import annotations

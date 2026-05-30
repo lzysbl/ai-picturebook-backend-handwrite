@@ -1,4 +1,15 @@
-"""Tests for image scan benchmark helpers."""
+"""图像 benchmark 脚本辅助函数测试。
+
+覆盖范围：
+- 验证 benchmark 图片发现、递归抽样、统计汇总和 Markdown 输出。
+- 验证 TTS 失败不会把图片识别结果误判为失败。
+
+关联脚本：
+- `scripts/benchmark_scan_images.py`
+
+运行方式：
+- `pytest tests/test_benchmark_scan_images.py`
+"""
 
 from __future__ import annotations
 

@@ -1,4 +1,16 @@
-"""最小化 AI 连通性测试脚本（读取项目 .env 配置）。"""
+"""最小化 AI 连通性测试脚本。
+
+用途：
+- 读取项目 `.env` 中的大模型配置，手动验证外部 AI 服务是否能连通。
+- 这不是普通单元测试，更像验收前的环境探针。
+
+关联模块：
+- `app/core/config.py`：读取 AI 配置。
+- 真实模型供应商：Qwen/OpenAI-compatible 接口。
+
+运行方式：
+- `python tests/test_ai.py`
+"""
 
 from __future__ import annotations
 

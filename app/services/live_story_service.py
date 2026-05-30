@@ -1,4 +1,19 @@
-"""Helpers for turning page analysis into child-friendly live storytelling."""
+"""连续实时讲述上下文服务。
+
+职责：
+- 把单页识别结果整理成适合实时讲述的页面摘要。
+- 合并最近几页上下文，避免连续扫描时每一页都像孤立故事。
+- 维护角色线索、页面顺序和去重判断，让实时讲述更连贯。
+
+前端关联：
+- `/ui/camera`：连续实时识别、上下文保留、总故事整理。
+- 前端 `camera.js` 的实时扫描流程通过故事路由间接使用本服务。
+
+主要路由：
+- `app/routers/stories.py`：`/api/stories/scan`
+- `app/routers/stories.py`：`/api/stories/scan/stream`
+- `app/routers/stories.py`：`/api/stories/scan/save`
+"""
 
 from __future__ import annotations
 

@@ -1,3 +1,17 @@
+<#
+用途：
+- 一键执行系统验收前的基础检查，并把日志写入 reports/system_tests。
+
+检查内容：
+- 运行 pytest。
+- 编译关键 Python 文件，检查语法。
+- 如果本机有 node，则检查 camera.js 语法。
+- 导出 runtime metrics，确认实验数据脚本可运行。
+
+运行方式：
+- 在项目根目录执行：powershell -ExecutionPolicy Bypass -File scripts\run_system_tests.ps1
+#>
+
 $ErrorActionPreference = "Stop"
 
 $projectRoot = Split-Path -Parent $PSScriptRoot

@@ -1,3 +1,17 @@
+"""论文中文图表重绘脚本。
+
+用途：
+- 使用 Pillow 重绘论文中的系统用例图、架构图、ER 图、实时识别流程图等。
+- 保证图中文字为中文、风格统一，并可在 Word 论文中直接插入。
+
+关联文件：
+- 输出到 `reports/software_engineering_figures` 和 `reports/thesis_figures`。
+- 服务于论文第 3、4、5、6 章图表。
+
+运行方式：
+- `python scripts/redraw_thesis_figures_cn.py`
+"""
+
 from __future__ import annotations
 
 import math

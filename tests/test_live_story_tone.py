@@ -1,4 +1,15 @@
-"""Tests for the live scan storytelling tone."""
+"""实时讲述语气测试。
+
+覆盖范围：
+- 验证连续实时识别生成的讲述更像儿童故事，而不是生硬的图片分析报告。
+
+关联模块：
+- `app/services/live_story_service.py`
+- `/ui/camera` 连续实时识别讲述。
+
+运行方式：
+- `pytest tests/test_live_story_tone.py`
+"""
 
 from __future__ import annotations
 

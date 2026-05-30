@@ -1,3 +1,18 @@
+"""论文 DOCX 构建脚本。
+
+用途：
+- 将论文正文 Markdown/文本内容写入学校模板 DOCX。
+- 处理封面、摘要、目录、正文标题、图片、表格、页眉页脚和页码等格式。
+- 用于生成可提交或继续人工校对的论文 Word 文档。
+
+关联文件：
+- 读取报告目录中的论文源文本、图片和学校模板。
+- 输出最终论文 DOCX。
+
+运行方式：
+- `python scripts/build_thesis_docx.py`
+"""
+
 from __future__ import annotations
 
 import re

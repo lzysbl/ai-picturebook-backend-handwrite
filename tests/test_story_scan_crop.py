@@ -1,4 +1,15 @@
-"""Tests for scan crop helpers."""
+"""实时识别裁剪与缓存辅助函数测试。
+
+覆盖范围：
+- 验证裁剪框归一化、越界拒绝、图片增强输出和扫描缓存 key。
+
+关联模块：
+- `app/services/live_scan_runtime_service.py`
+- `/ui/camera` 实时识别图片预处理。
+
+运行方式：
+- `pytest tests/test_story_scan_crop.py`
+"""
 
 from __future__ import annotations
 

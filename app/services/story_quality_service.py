@@ -1,4 +1,17 @@
-"""Rule-based story quality scoring and paper-facing summary helpers."""
+"""规则型故事质量评价服务。
+
+职责：
+- 不依赖大模型，使用规则指标评估故事质量。
+- 检查页面覆盖、内容重复、语言可读性、儿童适龄性等。
+- 为论文实验章节生成可解释的质量指标。
+
+前端关联：
+- `/ui/history`：故事质量评价面板中的基础指标。
+- `/ui/generate`、`/ui/camera`：故事生成或保存后可用于快速质量反馈。
+
+主要路由：
+- `app/routers/stories.py`：质量评价相关接口通过 `eval_service` 间接调用。
+"""
 
 from __future__ import annotations
 

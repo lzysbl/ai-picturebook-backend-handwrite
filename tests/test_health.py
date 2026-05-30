@@ -1,4 +1,15 @@
-"""Health endpoint tests."""
+"""健康检查接口测试。
+
+覆盖范围：
+- 构造最小 FastAPI 应用，验证 `/health` 可以返回服务正常状态。
+
+关联页面/模块：
+- 部署验收和启动检查。
+- `app/routers/health.py`
+
+运行方式：
+- `pytest tests/test_health.py`
+"""
 
 from __future__ import annotations
 
