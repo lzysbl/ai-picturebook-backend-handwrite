@@ -46,3 +46,8 @@ reports/runtime_metrics/
 reports/system_tests/
 reports/image_scan_benchmark/
 release/
+
+# Local Node tooling
+node_modules/
+package.json
+package-lock.json
